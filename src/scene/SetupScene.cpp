@@ -45,10 +45,15 @@ void SetupScene::Update(float dt) {
             }
         }
     } else {
-        // 传统/攻防: 左右切换队伍 (仅人类可操作，可合作也可对抗)
+        // 传统/攻防: 左右切换队伍, Q/E 切换坦克类型
         if (slot.isHuman && (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT))) {
             slot.team = 1 - slot.team;
             session_.BalanceAITeams();
+        }
+        if (slot.isHuman && (IsKeyPressed(KEY_Q) || IsKeyPressed(KEY_E))) {
+            int t = static_cast<int>(slot.tankType);
+            t = IsKeyPressed(KEY_Q) ? (t + 3) % 4 : (t + 1) % 4;
+            slot.tankType = static_cast<TankType>(t);
         }
     }
 
@@ -93,7 +98,7 @@ void SetupScene::Render() {
     if (mode_ == GameMode::FREE_FOR_ALL) {
         ops = "UP/DOWN = Slot   TAB = Human/AI   LEFT/RIGHT = Tank Type";
     } else {
-        ops = "UP/DOWN = Slot   TAB = Human/AI   LEFT/RIGHT = Team";
+        ops = "UP/DOWN = Slot   TAB = Human/AI   LEFT/RIGHT = Team   Q/E = Tank Type";
     }
     int opsW = MeasureText(ops, 13);
     DrawText(ops, (sw - opsW) / 2, 104, 13, LIGHTGRAY);
@@ -188,11 +193,17 @@ void SetupScene::RenderSlot(int index) {
     int rx = boxX + 200;
 
     if (editable) {
-        // 可编辑: 左右箭头选择
+        // 可编辑: Q/E 切换坦克类型
         const auto& stats = GetTankStats(slot.tankType);
-        DrawText("< ", rx, y + 8, 24, selected ? YELLOW : DARKGRAY);
-        DrawText(stats.name, rx + 25, y + 8, 24, WHITE);
-        DrawText(" >", rx + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
+        if (mode_ == GameMode::FREE_FOR_ALL) {
+            DrawText("< ", rx, y + 8, 24, selected ? YELLOW : DARKGRAY);
+            DrawText(stats.name, rx + 25, y + 8, 24, WHITE);
+            DrawText(" >", rx + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
+        } else {
+            DrawText("Q ", rx, y + 8, 24, selected ? YELLOW : DARKGRAY);
+            DrawText(stats.name, rx + 25, y + 8, 24, WHITE);
+            DrawText(" E", rx + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
+        }
 
         // 属性数值
         char statBuf[128];
