@@ -27,6 +27,9 @@ public:
     void Run();
     void Stop();
 
+    /// 设置外部运行标志 (信号处理器设置, 用于 Ctrl+C)
+    void SetRunningFlag(volatile bool* flag) { extRunning_ = flag; }
+
     void OnEvent(const Event& event) override;
 
 private:
@@ -34,6 +37,10 @@ private:
     enum class State { LOBBY, GAME, GAME_OVER };
     State state_ = State::LOBBY;
     bool running_ = false;
+    volatile bool* extRunning_ = nullptr;  // 外部信号标志 (SIGINT)
+
+    /// 非阻塞检查 stdin 是否有 'q' 输入
+    static bool CheckQuitKey();
 
     // ---- Network ----
     NetworkManager net_;

@@ -17,9 +17,38 @@
 #include <chrono>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <conio.h>
+#else
+#include <unistd.h>
+#include <sys/select.h>
+#endif
+
 GameServer::GameServer() = default;
 GameServer::~GameServer() {
     Stop();
+}
+
+bool GameServer::CheckQuitKey() {
+#ifdef _WIN32
+    if (_kbhit()) {
+        int ch = _getch();
+        return ch == 'q' || ch == 'Q';
+    }
+    return false;
+#else
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    struct timeval tv = { 0, 0 };
+    if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) > 0) {
+        char buf[1];
+        if (read(STDIN_FILENO, buf, 1) > 0) {
+            return buf[0] == 'q' || buf[0] == 'Q';
+        }
+    }
+    return false;
+#endif
 }
 
 bool GameServer::Start(uint16_t port) {
@@ -56,6 +85,17 @@ void GameServer::Run() {
     auto lastTime = std::chrono::steady_clock::now();
 
     while (running_) {
+        // 检查外部退出信号 (Ctrl+C)
+        if (extRunning_ && !*extRunning_) {
+            printf("[SERVER] Signal received, shutting down...\n");
+            break;
+        }
+        // 检查 'q' 键退出
+        if (CheckQuitKey()) {
+            printf("[SERVER] Quit key pressed, shutting down...\n");
+            break;
+        }
+
         auto now = std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float>(now - lastTime).count();
         lastTime = now;

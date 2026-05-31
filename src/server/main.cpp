@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <csignal>
 
-static bool g_running = true;
+static volatile bool g_running = true;
 
 void SignalHandler(int) {
     g_running = false;
@@ -33,11 +33,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("Server running. Press Ctrl+C to stop.\n");
+    printf("Server running. Press 'q' or Ctrl+C to stop.\n");
     printf("\n");
 
+    server.SetRunningFlag(&g_running);
     server.Run();
 
+    server.Stop();
     printf("Server stopped.\n");
     return 0;
 }
