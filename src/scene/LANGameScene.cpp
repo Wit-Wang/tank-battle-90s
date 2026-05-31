@@ -6,6 +6,7 @@
 #include "game/tank/TankType.h"
 #include "game/map/TileType.h"
 #include "core/Types.h"
+#include "core/ResourceManager.h"
 #include "raylib.h"
 #include <cstring>
 #include <cmath>
@@ -62,16 +63,33 @@ void LANGameScene::Update(float dt) {
         return;
     }
 
-    ProcessMessages();
+    try {
+        ProcessMessages();
+    } catch (const std::exception& e) {
+        TraceLog(LOG_ERROR, "Network error in ProcessMessages: %s", e.what());
+        manager_->PostReturnToMenu();
+        return;
+    } catch (...) {
+        TraceLog(LOG_ERROR, "Unknown network error in ProcessMessages");
+        manager_->PostReturnToMenu();
+        return;
+    }
 
     // 发送输入 (~60Hz)
     if (inputTimer_ >= NET_INPUT_TICK_INTERVAL) {
-        SendInput();
+        try {
+            SendInput();
+        } catch (...) {
+            TraceLog(LOG_ERROR, "Network error in SendInput");
+            manager_->PostReturnToMenu();
+            return;
+        }
         inputTimer_ = 0.f;
     }
 
-    // 超时检测: Host 可能已断开
+    // 超时检测: Host/Server 可能已断开
     if (disconnectTimer_ > NET_TIMEOUT_SECONDS * 2.f) {
+        TraceLog(LOG_WARNING, "Connection timeout, returning to menu");
         manager_->PostReturnToMenu();
     }
 
@@ -82,7 +100,7 @@ void LANGameScene::Update(float dt) {
 }
 
 void LANGameScene::ProcessMessages() {
-    if (!net_) return;
+    if (!net_ || !net_->IsConnected()) return;
 
     // TCP 消息
     NetMessage msg;
@@ -228,33 +246,53 @@ void LANGameScene::Render() {
 }
 
 void LANGameScene::RenderPlayers() {
-    const char* typeNames[] = { "light", "medium", "heavy", "speed" };
+    static const Color teamColors[] = { RED, BLUE, GREEN, PURPLE };
+    static const char* typeNames[] = { "light", "medium", "heavy", "speed" };
+    auto& rm = ResourceManager::Instance();
 
     for (int i = 0; i < 4; i++) {
         const auto& p = players_[i];
         if (!p.alive) continue;
 
-        Color teamColor = (p.team == 0) ? RED : BLUE;
+        Color teamColor = (p.team >= 0 && p.team < 4) ? teamColors[p.team] : WHITE;
+        Color tint = WHITE;
 
         // 无敌闪烁
         if (p.invincible) {
             float alpha = std::abs(std::sin(GetTime() * 10.f));
-            teamColor = ColorAlpha(WHITE, alpha);
+            tint = ColorAlpha(WHITE, alpha);
         }
 
-        // 绘制坦克 (简单的矩形 + 方向指示)
-        float halfSize = TILE_SIZE * 0.4f;
-        DrawRectanglePro(
-            { p.x, p.y, halfSize * 2, halfSize * 2 },
-            { halfSize, halfSize },
-            p.rotation,
-            teamColor);
+        // 绘制坦克纹理
+        int typeIdx = static_cast<int>(p.type);
+        if (typeIdx < 0 || typeIdx > 3) typeIdx = 1;
+        std::string texName = std::string("tank_") + typeNames[typeIdx] + "_team" + std::to_string(p.team);
+
+        if (rm.HasTexture(texName)) {
+            Texture2D& tex = rm.GetTexture(texName);
+            float scale = TILE_SIZE / static_cast<float>(tex.width);
+            float origin = tex.width * scale * 0.5f;
+            DrawTexturePro(tex,
+                { 0, 0, static_cast<float>(tex.width), static_cast<float>(tex.height) },
+                { p.x, p.y, tex.width * scale, tex.height * scale },
+                { origin, origin },
+                p.rotation,
+                tint);
+        } else {
+            // 回退: 短形色块
+            float halfSize = TILE_SIZE * 0.4f;
+            DrawRectanglePro(
+                { p.x, p.y, halfSize * 2, halfSize * 2 },
+                { halfSize, halfSize },
+                p.rotation,
+                teamColor);
+        }
 
         // HP 条
         if (p.maxHp > 1) {
             int barW = 40;
             int barX = static_cast<int>(p.x) - barW / 2;
-            int barY = static_cast<int>(p.y) - static_cast<int>(halfSize) - 8;
+            int barY = static_cast<int>(p.y) - TILE_SIZE / 2 - 8;
             DrawRectangle(barX, barY, barW, 4, DARKGRAY);
             DrawRectangle(barX, barY, barW * p.hp / p.maxHp, 4, GREEN);
         }
@@ -267,14 +305,15 @@ void LANGameScene::RenderPlayers() {
             snprintf(label, sizeof(label), "P%d", i + 1);
         Color labelColor = (i == mySlot_) ? YELLOW : WHITE;
         DrawText(label, static_cast<int>(p.x) - 8,
-                 static_cast<int>(p.y) + static_cast<int>(halfSize) + 2, 10, labelColor);
+                 static_cast<int>(p.y) + TILE_SIZE / 2 + 2, 10, labelColor);
     }
 }
 
 void LANGameScene::RenderBullets() {
+    static const Color teamColors[] = { RED, BLUE, GREEN, PURPLE };
     for (auto& b : bullets_) {
         if (!b.active) continue;
-        Color c = (b.ownerTeam == 0) ? RED : BLUE;
+        Color c = (b.ownerTeam >= 0 && b.ownerTeam < 4) ? teamColors[b.ownerTeam] : WHITE;
         DrawCircle(static_cast<int>(b.x), static_cast<int>(b.y), 4.f, c);
     }
 }

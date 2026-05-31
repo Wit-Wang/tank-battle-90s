@@ -61,6 +61,10 @@ bool GameServer::Start(uint16_t port) {
     // Scan ALL maps with metadata
     mapManager_.ScanMaps("assets/maps");
     session_.SetGameMode(GameMode::TRADITIONAL);
+    // Server: all slots start as AI (human slots assigned on connect)
+    for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
+        session_.GetSlot(i).isHuman = false;
+    }
     RefreshModeMaps();
 
     printf("[SERVER] Listening on port %d\n", port);

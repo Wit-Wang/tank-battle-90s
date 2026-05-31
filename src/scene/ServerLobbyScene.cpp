@@ -65,9 +65,23 @@ void ServerLobbyScene::Update(float dt) {
 
         case State::LOBBY: {
             // Receive messages from server
-            NetMessage msg;
-            while (net_->Receive(msg)) {
-                HandleServerMessage(msg);
+            try {
+                NetMessage msg;
+                while (net_ && net_->IsConnected() && net_->Receive(msg)) {
+                    HandleServerMessage(msg);
+                }
+            } catch (...) {
+                TraceLog(LOG_ERROR, "Network error in server lobby");
+                statusMessage_ = "Connection lost. Press ENTER to retry, ESC to go back.";
+                state_ = State::ERROR;
+                break;
+            }
+
+            // 检查连接是否断开
+            if (net_ && !net_->IsConnected()) {
+                statusMessage_ = "Disconnected from server. Press ENTER to retry, ESC to go back.";
+                state_ = State::ERROR;
+                break;
             }
 
             // LEFT/RIGHT: change own tank type
@@ -79,9 +93,13 @@ void ServerLobbyScene::Update(float dt) {
                     if (IsKeyPressed(KEY_RIGHT)) t = (t + 1) % 4;
                     slot.tankType = static_cast<TankType>(t);
 
-                    NetMessage setType(NetMessageType::SetTankType);
-                    setType.WritePayload(static_cast<uint8_t>(t));
-                    net_->Send(setType);
+                    try {
+                        NetMessage setType(NetMessageType::SetTankType);
+                        setType.WritePayload(static_cast<uint8_t>(t));
+                        net_->Send(setType);
+                    } catch (...) {
+                        statusMessage_ = "Failed to send. Check connection.";
+                    }
                 }
             }
 
@@ -91,8 +109,12 @@ void ServerLobbyScene::Update(float dt) {
 
             // ENTER: toggle ready
             if (IsKeyPressed(KEY_ENTER)) {
-                NetMessage ready(NetMessageType::ClientReady);
-                net_->Send(ready);
+                try {
+                    NetMessage ready(NetMessageType::ClientReady);
+                    net_->Send(ready);
+                } catch (...) {
+                    statusMessage_ = "Failed to send. Check connection.";
+                }
             }
 
             // ESC: disconnect and return
