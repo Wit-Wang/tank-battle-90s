@@ -5,18 +5,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ---- Fetch raylib ----
-include(FetchContent)
-FetchContent_Declare(
-    raylib
-    GIT_REPOSITORY https://github.com/raysan5/raylib.git
-    GIT_TAG        5.5
-    GIT_SHALLOW    TRUE
-)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(raylib)
-
 # ---- Shared game logic (used by both client and server) ----
 set(SHARED_SOURCES
     src/core/AudioManager.cpp
@@ -47,62 +35,65 @@ set(SHARED_SOURCES
     src/scene/GameNetworkHost.cpp
 )
 
-# ---- Client-only sources ----
-set(CLIENT_SOURCES
-    src/main.cpp
-    src/core/Game.cpp
-    src/core/Window.cpp
-    src/scene/GameOverScene.cpp
-    src/scene/GameScene.cpp
-    src/scene/LANGameScene.cpp
-    src/scene/LANLobbyScene.cpp
-    src/scene/LANModeSelectScene.cpp
-    src/scene/MapSelectScene.cpp
-    src/scene/MenuScene.cpp
-    src/scene/ModeSelectScene.cpp
-    src/scene/PauseScene.cpp
-    src/scene/SceneManager.cpp
-    src/scene/ServerLobbyScene.cpp
-    src/scene/SetupScene.cpp
-    src/scene/TeamSelectScene.cpp
-    src/ui/HUD.cpp
-    src/utils/SoundGenerator.cpp
-    src/utils/TextureGenerator.cpp
-)
-
 # ---- Server-only sources ----
 set(SERVER_SOURCES
     src/server/main.cpp
     src/server/GameServer.cpp
 )
 
-# ---- Client executable ----
-add_executable(${PROJECT_NAME} ${SHARED_SOURCES} ${CLIENT_SOURCES})
-target_include_directories(${PROJECT_NAME} PRIVATE src)
-target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
-
-# ---- Server executable ----
+# ---- Server (always built, no X11/OpenGL needed) ----
 add_executable(TankGameServer ${SHARED_SOURCES} ${SERVER_SOURCES})
 target_include_directories(TankGameServer PRIVATE src)
 target_compile_definitions(TankGameServer PRIVATE TANKGAME_SERVER)
 if(WIN32)
-    target_link_libraries(TankGameServer PRIVATE raylib)
+    target_link_libraries(TankGameServer PRIVATE ws2_32 winmm)
+else()
+    target_link_libraries(TankGameServer PRIVATE pthread m)
 endif()
 
-# ---- Copy assets to build dir (client) ----
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
-    COMMENT "Copying assets to client build directory"
-)
-
-# ---- Platform libs ----
+# ---- Client (Windows only — requires raylib/X11) ----
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE winmm ws2_32)
-    target_link_libraries(TankGameServer PRIVATE winmm ws2_32)
-else()
-    # Linux: pthread for std::thread, m for math
-    target_link_libraries(${PROJECT_NAME} PRIVATE pthread m)
-    target_link_libraries(TankGameServer PRIVATE pthread m)
+    include(FetchContent)
+    FetchContent_Declare(
+        raylib
+        GIT_REPOSITORY https://github.com/raysan5/raylib.git
+        GIT_TAG        5.5
+        GIT_SHALLOW    TRUE
+    )
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(raylib)
+
+    set(CLIENT_SOURCES
+        src/main.cpp
+        src/core/Game.cpp
+        src/core/Window.cpp
+        src/scene/GameOverScene.cpp
+        src/scene/GameScene.cpp
+        src/scene/LANGameScene.cpp
+        src/scene/LANLobbyScene.cpp
+        src/scene/LANModeSelectScene.cpp
+        src/scene/MapSelectScene.cpp
+        src/scene/MenuScene.cpp
+        src/scene/ModeSelectScene.cpp
+        src/scene/PauseScene.cpp
+        src/scene/SceneManager.cpp
+        src/scene/ServerLobbyScene.cpp
+        src/scene/SetupScene.cpp
+        src/scene/TeamSelectScene.cpp
+        src/ui/HUD.cpp
+        src/utils/SoundGenerator.cpp
+        src/utils/TextureGenerator.cpp
+    )
+
+    add_executable(${PROJECT_NAME} ${SHARED_SOURCES} ${CLIENT_SOURCES})
+    target_include_directories(${PROJECT_NAME} PRIVATE src)
+    target_link_libraries(${PROJECT_NAME} PRIVATE raylib ws2_32 winmm)
+
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/assets
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+        COMMENT "Copying assets to client build directory"
+    )
 endif()
