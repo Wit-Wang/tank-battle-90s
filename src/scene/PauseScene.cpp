@@ -10,11 +10,11 @@ void PauseScene::Update(float dt) {
 
     // P / ESC → 恢复游戏
     if (IsKeyPressed(KEY_P) || IsKeyPressed(KEY_ESCAPE)) {
-        manager_->PopScene();
+        manager_->PostPopScene();
     }
     // Q → 退出到主菜单 (清理整个游戏栈)
     if (IsKeyPressed(KEY_Q)) {
-        manager_->ReturnToMenu();
+        manager_->PostReturnToMenu();
     }
 }
 

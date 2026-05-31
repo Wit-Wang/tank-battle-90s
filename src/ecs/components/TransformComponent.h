@@ -14,6 +14,7 @@ public:
 
     // ---- Getters ----
     Vector2 GetPosition() const { return position_; }
+    Vector2 GetPrevPosition() const { return prevPosition_; }
     float   GetRotation() const { return rotation_; }
     float   GetScale()    const { return scale_; }
 
@@ -21,6 +22,9 @@ public:
     void SetPosition(Vector2 p) { position_ = p; }
     void SetRotation(float r)   { rotation_ = r; }
     void SetScale(float s)      { scale_ = s; }
+
+    /// 在移动前调用，保存当前位置用于碰撞系统判断移动轴
+    void SavePosition() { prevPosition_ = position_; }
 
     // ---- 便捷操作 ----
     void Translate(Vector2 delta) {
@@ -36,6 +40,7 @@ public:
 
 private:
     Vector2 position_{ 0.f, 0.f };
+    Vector2 prevPosition_{ 0.f, 0.f };
     float   rotation_ = 0.f;
     float   scale_    = 1.f;
 };

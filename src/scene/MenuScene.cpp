@@ -1,7 +1,7 @@
 #include "MenuScene.h"
 #include "SceneManager.h"
 #include "ModeSelectScene.h"
-#include "LANModeSelectScene.h"
+#include "ServerLobbyScene.h"
 #include "raylib.h"
 
 void MenuScene::Enter() {
@@ -29,8 +29,8 @@ void MenuScene::Update(float dt) {
                 // Hot Seat (本地热座) → 游戏模式选择
                 manager_->PushScene(std::make_unique<ModeSelectScene>(manager_));
             } else if (modeSelection_ == 1) {
-                // LAN Multiplayer
-                manager_->PushScene(std::make_unique<LANModeSelectScene>(manager_));
+                // Server Multiplayer
+                manager_->PushScene(std::make_unique<ServerLobbyScene>(manager_));
             } else {
                 // Back
                 modeSelecting_ = false;
@@ -68,10 +68,10 @@ void MenuScene::Render() {
         }
     } else {
         // 模式选择
-        const char* modes[] = { "HOT SEAT (Local)", "LAN MULTIPLAYER", "BACK" };
+        const char* modes[] = { "HOT SEAT (Local)", "SERVER MULTIPLAYER", "BACK" };
         const char* descs[] = {
             "Play with friends on one device",
-            "Play over local network",
+            "Play online via server",
             "Return to title"
         };
 

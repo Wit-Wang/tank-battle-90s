@@ -33,10 +33,13 @@ GameScene::GameScene(SceneManager* manager, GameSession session)
 GameScene::~GameScene() = default;
 
 void GameScene::Enter() {
+    TraceLog(LOG_INFO, "GameScene::Enter() - begin");
+
     // 游戏开始时随机分配 AI 坦克类型
     session_.RandomizeAITypes();
 
     // 加载地图
+    TraceLog(LOG_INFO, "GameScene::Enter() - loading map: %s", session_.GetMapPath().c_str());
     map_.LoadFromFile(session_.GetMapPath());
 
     // 根据模式生成基地
@@ -55,7 +58,11 @@ void GameScene::Enter() {
     EventSystem::Instance().Subscribe(EventType::WallDestroyed, this);
 
     // 网络初始化
-    if (net_) netHost_.Init(map_);
+    if (net_) {
+        TraceLog(LOG_INFO, "GameScene::Enter() - initializing network host");
+        netHost_.Init(map_);
+    }
+    TraceLog(LOG_INFO, "GameScene::Enter() - done");
 }
 
 void GameScene::Exit() {
@@ -82,13 +89,13 @@ void GameScene::Update(float dt) {
         if (gameOverTimer_ > 2.f) {
             if (net_) {
                 if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
-                    manager_->ReturnToMenu();
+                    manager_->PostReturnToMenu();
                 }
                 return;
             }
 
             // 热座模式: 进入结算场景
-            manager_->SetupNext(
+            manager_->PostSetupNext(
                 std::make_unique<GameOverScene>(manager_, winningTeam_,
                                                 std::move(session_)));
         }
@@ -122,7 +129,7 @@ void GameScene::Update(float dt) {
                         static Color ffaColors[] = { RED, BLUE, GREEN, PURPLE };
                         c = (i < 4) ? ffaColors[i] : WHITE;
                     }
-                    particles_.Emit(t->GetPosition(), 20, c, 150.f);
+                    particles_.EmitExplosion(t->GetPosition(), c);
                 }
 
                 // 扣命

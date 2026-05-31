@@ -3,7 +3,11 @@
 #include "game/tank/TankType.h"
 #include "core/Types.h"
 #include "core/Timer.h"
+#ifdef TANKGAME_SERVER
+#include "utils/raylib_stubs.h"
+#else
 #include "raylib.h"
+#endif
 
 class Tank;
 
@@ -30,6 +34,9 @@ struct PlayerSlot {
     bool  isRespawning = false;    // 是否正在等待重生
     int   kills = 0;               // 击杀数 (各自为战用)
 
-    /// 获取显示用队伍颜色
-    Color GetTeamColor() const { return (team == 0) ? RED : BLUE; }
+    /// 获取显示用队伍颜色 (0=红 1=蓝 2=绿 3=紫)
+    Color GetTeamColor() const {
+        static const Color colors[] = { RED, BLUE, GREEN, PURPLE };
+        return (team >= 0 && team < 4) ? colors[team] : RED;
+    }
 };

@@ -20,12 +20,12 @@ void GameOverScene::Update(float dt) {
     // ENTER → 再来一局：直接跳到选图界面
     if (IsKeyPressed(KEY_ENTER)) {
         session_.RandomizeAITypes();  // 重新随机 AI 类型
-        manager_->SetupNext(
+        manager_->PostSetupNext(
             std::make_unique<MapSelectScene>(manager_, session_));
     }
     // ESC → 回主菜单
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->ReturnToMenu();
+        manager_->PostReturnToMenu();
     }
 }
 

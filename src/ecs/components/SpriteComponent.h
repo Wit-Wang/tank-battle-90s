@@ -2,7 +2,11 @@
 
 #include "ecs/Component.h"
 #include "core/Types.h"
+#ifdef TANKGAME_SERVER
+#include "utils/raylib_stubs.h"
+#else
 #include "raylib.h"
+#endif
 
 /// 精灵渲染组件：绑定纹理、着色、翻转
 class SpriteComponent : public Component {

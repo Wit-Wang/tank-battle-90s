@@ -2,7 +2,11 @@
 
 #include "TileType.h"
 #include "core/Types.h"
+#ifdef TANKGAME_SERVER
+#include "utils/raylib_stubs.h"
+#else
 #include "raylib.h"
+#endif
 #include <vector>
 #include <string>
 

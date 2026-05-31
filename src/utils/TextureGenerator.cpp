@@ -16,6 +16,16 @@ static constexpr Color BLUE_MID    = {50, 80, 200, 255};
 static constexpr Color BLUE_LIGHT  = {80, 120, 230, 255};
 static constexpr Color BLUE_HIGHLIGHT = {140, 170, 255, 255};
 
+static constexpr Color GREEN_DARK  = {30, 120, 30, 255};
+static constexpr Color GREEN_MID   = {50, 160, 50, 255};
+static constexpr Color GREEN_LIGHT = {80, 200, 80, 255};
+static constexpr Color GREEN_HIGHLIGHT = {130, 230, 130, 255};
+
+static constexpr Color PURPLE_DARK  = {100, 30, 130, 255};
+static constexpr Color PURPLE_MID   = {140, 50, 180, 255};
+static constexpr Color PURPLE_LIGHT = {180, 90, 220, 255};
+static constexpr Color PURPLE_HIGHLIGHT = {210, 140, 250, 255};
+
 static constexpr Color METAL_DARK  = {80, 80, 90, 255};
 static constexpr Color METAL_MID   = {120, 120, 135, 255};
 static constexpr Color METAL_LIGHT = {160, 160, 175, 255};
@@ -23,9 +33,33 @@ static constexpr Color TREAD_DARK  = {50, 45, 40, 255};
 static constexpr Color TREAD_MID   = {90, 80, 70, 255};
 static constexpr Color YELLOW_BUL  = {255, 230, 60, 255};
 
-static Color TeamDark(int t)  { return t == 0 ? RED_DARK  : BLUE_DARK; }
-static Color TeamMid(int t)   { return t == 0 ? RED_MID   : BLUE_MID; }
-static Color TeamLight(int t) { return t == 0 ? RED_LIGHT  : BLUE_LIGHT; }
+static Color TeamDark(int t) {
+    switch (t) {
+        case 0:  return RED_DARK;
+        case 1:  return BLUE_DARK;
+        case 2:  return GREEN_DARK;
+        case 3:  return PURPLE_DARK;
+        default: return RED_DARK;
+    }
+}
+static Color TeamMid(int t) {
+    switch (t) {
+        case 0:  return RED_MID;
+        case 1:  return BLUE_MID;
+        case 2:  return GREEN_MID;
+        case 3:  return PURPLE_MID;
+        default: return RED_MID;
+    }
+}
+static Color TeamLight(int t) {
+    switch (t) {
+        case 0:  return RED_LIGHT;
+        case 1:  return BLUE_LIGHT;
+        case 2:  return GREEN_LIGHT;
+        case 3:  return PURPLE_LIGHT;
+        default: return RED_LIGHT;
+    }
+}
 
 // ---- 绘制辅助 ----
 
@@ -294,9 +328,9 @@ Texture2D TextureGenerator::GenerateBase(int team, bool destroyed) {
             DrawPx(img, px, py, {40, 35, 30, 255});
         }
     } else {
-        Color baseColor = team == 0 ? RED_MID : BLUE_MID;
-        Color baseDark = team == 0 ? RED_DARK : BLUE_DARK;
-        Color baseLight = team == 0 ? RED_LIGHT : BLUE_LIGHT;
+        Color baseColor = TeamMid(team);
+        Color baseDark = TeamDark(team);
+        Color baseLight = TeamLight(team);
 
         DrawRect(img, 0, 0, 64, 64, {60, 55, 45, 255});
         DrawRectBordered(img, 3, 3, 58, 58, {75, 70, 55, 255}, {50, 45, 35, 255});
@@ -344,13 +378,13 @@ void TextureGenerator::GenerateAll() {
     const TankType types[] = { TankType::LIGHT, TankType::MEDIUM, TankType::HEAVY, TankType::SPEED };
     const char* typeNames[] = { "light", "medium", "heavy", "speed" };
     for (int t = 0; t < 4; t++) {
-        for (int team = 0; team < 2; team++) {
+        for (int team = 0; team < 4; team++) {
             std::string name = std::string("tank_") + typeNames[t] + "_team" + std::to_string(team);
             rm.RegisterTexture(name, GenerateTank(types[t], team));
         }
     }
 
-    for (int team = 0; team < 2; team++) {
+    for (int team = 0; team < 4; team++) {
         std::string name = std::string("bullet_team") + std::to_string(team);
         rm.RegisterTexture(name, GenerateBullet(team));
     }
@@ -360,7 +394,7 @@ void TextureGenerator::GenerateAll() {
     for (int i = 0; i < 6; i++)
         rm.RegisterTexture(tileNames[i], GenerateTile(tiles[i]));
 
-    for (int team = 0; team < 2; team++) {
+    for (int team = 0; team < 4; team++) {
         rm.RegisterTexture(std::string("base_team") + std::to_string(team), GenerateBase(team, false));
         rm.RegisterTexture(std::string("base_team") + std::to_string(team) + "_destroyed", GenerateBase(team, true));
     }

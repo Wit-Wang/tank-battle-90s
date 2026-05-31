@@ -13,6 +13,7 @@
   #include <netinet/in.h>
   #include <netinet/tcp.h>
   #include <arpa/inet.h>
+  #include <netdb.h>
   #include <unistd.h>
   #include <fcntl.h>
   using socket_t = int;
@@ -209,7 +210,22 @@ bool NetworkManager::Connect(const std::string& ip, uint16_t port) {
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port   = htons(port);
-    inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+
+    // Try as IP address first
+    if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) != 1) {
+        // Not a valid IP — try DNS resolution
+        struct addrinfo hints{}, *result = nullptr;
+        hints.ai_family   = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+
+        if (getaddrinfo(ip.c_str(), nullptr, &hints, &result) != 0 || !result) {
+            Close();
+            return false;
+        }
+        auto* resolved = reinterpret_cast<sockaddr_in*>(result->ai_addr);
+        addr.sin_addr = resolved->sin_addr;
+        freeaddrinfo(result);
+    }
 
     if (connect(impl_->tcpSocket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
         Close();

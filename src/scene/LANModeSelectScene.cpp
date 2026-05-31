@@ -30,12 +30,12 @@ void LANModeSelectScene::Update(float dt) {
             manager_->PushScene(std::make_unique<LANLobbyScene>(manager_, std::move(net), false));
         } else {
             // Back to Menu
-            manager_->PopScene();
+            manager_->PostPopScene();
         }
     }
 
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->PopScene();
+        manager_->PostPopScene();
     }
 }
 

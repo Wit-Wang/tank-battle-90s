@@ -39,26 +39,28 @@ void CollisionSystem::BulletMapCollision(EntityManager& em, GameMap& map) {
         auto* transform = bullet->GetComponent<TransformComponent>();
         if (!transform) return;
 
-        // 出界检查
+        // 出界检查 (使用整数安全比较，避免 float→int 溢出)
         float px = transform->GetPosition().x;
         float py = transform->GetPosition().y;
-        if (px < 0 || px >= MAP_COLS * TILE_SIZE || py < 0 || py >= MAP_ROWS * TILE_SIZE) {
+        float maxX = static_cast<float>(MAP_COLS * TILE_SIZE);
+        float maxY = static_cast<float>(MAP_ROWS * TILE_SIZE);
+        if (px < 0.f || px >= maxX || py < 0.f || py >= maxY) {
             bullet->SetActive(false);
             return;
         }
 
-        // 子弹所在瓦片
-        int tc = static_cast<int>(px) / TILE_SIZE;
-        int tr = static_cast<int>(py) / TILE_SIZE;
+        // 安全计算瓦片坐标 (先除后转 int，避免大值溢出)
+        int tc = static_cast<int>(px / TILE_SIZE);
+        int tr = static_cast<int>(py / TILE_SIZE);
 
         TileType tile = map.GetTile(tc, tr);
         if (tile == TileType::BRICK) {
             map.SetTile(tc, tr, TileType::EMPTY);
             bullet->SetActive(false);
-            Event e{ EventType::WallDestroyed, bullet->GetId(), 0 };
-            e.x = tc * TILE_SIZE + TILE_SIZE / 2.f;
-            e.y = tr * TILE_SIZE + TILE_SIZE / 2.f;
-            EventSystem::Instance().Dispatch(e);
+            Event evt{ EventType::WallDestroyed, bullet->GetId(), 0 };
+            evt.x = tc * TILE_SIZE + TILE_SIZE / 2.f;
+            evt.y = tr * TILE_SIZE + TILE_SIZE / 2.f;
+            EventSystem::Instance().Dispatch(evt);
         } else if (tile == TileType::STEEL) {
             bullet->SetActive(false);
         } else if (tile == TileType::WATER) {
@@ -69,22 +71,40 @@ void CollisionSystem::BulletMapCollision(EntityManager& em, GameMap& map) {
 
 void CollisionSystem::TankMapCollision(EntityManager& em, GameMap& map) {
     em.ForEach([&](Entity* e) {
+        if (!e->IsActive()) return;
         auto* transform = e->GetComponent<TransformComponent>();
         auto* col = e->GetComponent<ColliderComponent>();
         if (!transform || !col) return;
 
-        // 独立解析 X 和 Y 轴，防止对角穿墙
-        for (int axis = 0; axis < 2; axis++) {
+        // 只处理坦克 (Player 层)，子弹/道具等不参与墙壁推离
+        if (col->layer != CollisionLayer::Player) return;
+
+        // 根据本帧实际移动方向决定解析哪些轴
+        Vector2 curPos = transform->GetPosition();
+        Vector2 prevPos = transform->GetPrevPosition();
+        float dx = curPos.x - prevPos.x;
+        float dy = curPos.y - prevPos.y;
+        bool movedX = std::abs(dx) > 0.001f;
+        bool movedY = std::abs(dy) > 0.001f;
+
+        // 未移动则跳过
+        if (!movedX && !movedY) return;
+
+        // 安全获取瓦片范围 (clamp 到地图边界，避免越界)
+        auto GetTileRange = [](float lo, float hi, int maxTile) {
+            int minT = std::max(0, static_cast<int>(lo) / TILE_SIZE);
+            int maxT = std::min(maxTile - 1, static_cast<int>(hi) / TILE_SIZE);
+            return std::pair{ minT, maxT };
+        };
+
+        // 分轴独立解析：先修正 X，再修正 Y（使用修正后的位置重新计算 AABB）
+        // Pass 1: X 轴（仅当本帧有水平移动时解析）
+        if (movedX) {
             Rectangle aabb = col->GetAABB();
-            int minC = static_cast<int>(aabb.x + 0.001f) / TILE_SIZE;
-            int maxC = static_cast<int>(aabb.x + aabb.width - 0.001f) / TILE_SIZE;
-            int minR = static_cast<int>(aabb.y + 0.001f) / TILE_SIZE;
-            int maxR = static_cast<int>(aabb.y + aabb.height - 0.001f) / TILE_SIZE;
+            auto [minC, maxC] = GetTileRange(aabb.x + 0.001f, aabb.x + aabb.width - 0.001f, MAP_COLS);
+            auto [minR, maxR] = GetTileRange(aabb.y + 0.001f, aabb.y + aabb.height - 0.001f, MAP_ROWS);
 
-            // 分组收集所有墙壁的推离量，防止推入相邻墙壁
-            float pushNeg = 0.f; // 向负方向推 (左/上) 的最大量
-            float pushPos = 0.f; // 向正方向推 (右/下) 的最大量
-
+            float pushNeg = 0.f, pushPos = 0.f;
             for (int r = minR; r <= maxR; r++) {
                 for (int c = minC; c <= maxC; c++) {
                     if (!map.IsWalkable(c, r)) {
@@ -95,15 +115,43 @@ void CollisionSystem::TankMapCollision(EntityManager& em, GameMap& map) {
                             static_cast<float>(TILE_SIZE)
                         };
                         Rectangle overlap = GetCollisionRec(aabb, wallRect);
-
-                        Vector2 pos = transform->GetPosition();
-                        if (axis == 0 && overlap.width > 0) {
+                        if (overlap.width > 0) {
+                            Vector2 pos = transform->GetPosition();
                             float wallCenter = c * TILE_SIZE + TILE_SIZE / 2.f;
                             if (pos.x < wallCenter)
                                 pushNeg = std::max(pushNeg, overlap.width);
                             else
                                 pushPos = std::max(pushPos, overlap.width);
-                        } else if (axis == 1 && overlap.height > 0) {
+                        }
+                    }
+                }
+            }
+            if (pushNeg > 0 || pushPos > 0) {
+                Vector2 pos = transform->GetPosition();
+                pos.x += pushPos - pushNeg;
+                transform->SetPosition(pos);
+            }
+        }
+
+        // Pass 2: Y 轴（仅当本帧有垂直移动时解析，使用 X 修正后的位置）
+        if (movedY) {
+            Rectangle aabb = col->GetAABB();
+            auto [minC, maxC] = GetTileRange(aabb.x + 0.001f, aabb.x + aabb.width - 0.001f, MAP_COLS);
+            auto [minR, maxR] = GetTileRange(aabb.y + 0.001f, aabb.y + aabb.height - 0.001f, MAP_ROWS);
+
+            float pushNeg = 0.f, pushPos = 0.f;
+            for (int r = minR; r <= maxR; r++) {
+                for (int c = minC; c <= maxC; c++) {
+                    if (!map.IsWalkable(c, r)) {
+                        Rectangle wallRect = {
+                            static_cast<float>(c * TILE_SIZE),
+                            static_cast<float>(r * TILE_SIZE),
+                            static_cast<float>(TILE_SIZE),
+                            static_cast<float>(TILE_SIZE)
+                        };
+                        Rectangle overlap = GetCollisionRec(aabb, wallRect);
+                        if (overlap.height > 0) {
+                            Vector2 pos = transform->GetPosition();
                             float wallCenter = r * TILE_SIZE + TILE_SIZE / 2.f;
                             if (pos.y < wallCenter)
                                 pushNeg = std::max(pushNeg, overlap.height);
@@ -113,14 +161,9 @@ void CollisionSystem::TankMapCollision(EntityManager& em, GameMap& map) {
                     }
                 }
             }
-
-            // 应用净推离量
             if (pushNeg > 0 || pushPos > 0) {
                 Vector2 pos = transform->GetPosition();
-                if (axis == 0)
-                    pos.x += pushPos - pushNeg;
-                else
-                    pos.y += pushPos - pushNeg;
+                pos.y += pushPos - pushNeg;
                 transform->SetPosition(pos);
             }
         }
@@ -174,6 +217,8 @@ void CollisionSystem::EntityEntityCollision(EntityManager& em) {
                 }
 
                 if (colA->onCollision) colA->onCollision(entities[j].get());
+                // 回调可能停用了 entities[i] (如 BOMB 道具连环击杀)，需重新检查
+                if (!entities[i]->IsActive()) break;
                 if (colB->onCollision) colB->onCollision(entities[i].get());
             }
         }

@@ -1,5 +1,6 @@
 #include "SceneManager.h"
 #include "MenuScene.h"
+#include "raylib.h"
 
 // ============================================================
 //  基础操作
@@ -27,8 +28,6 @@ void SceneManager::PopScene() {
 // ============================================================
 
 void SceneManager::SetupNext(std::unique_ptr<Scene> scene) {
-    // 替换栈顶，不增长栈深度
-    // 用于设置流程: Lobby → CharSelect → TeamSelect → MapSelect
     if (!scenes_.empty()) {
         scenes_.back()->Exit();
         scenes_.pop_back();
@@ -38,9 +37,6 @@ void SceneManager::SetupNext(std::unique_ptr<Scene> scene) {
 }
 
 void SceneManager::StartGame(std::unique_ptr<Scene> scene) {
-    // 清除设置链 (保留 Menu + Lobby)，压入 GameScene
-    // 栈: [Menu, Lobby, CharSelect, TeamSelect, MapSelect]
-    //   → [Menu, Lobby, GameScene]
     while (scenes_.size() > 2) {
         scenes_.back()->Exit();
         scenes_.pop_back();
@@ -51,15 +47,12 @@ void SceneManager::StartGame(std::unique_ptr<Scene> scene) {
 
 void SceneManager::ReturnTo(std::unique_ptr<Scene> fallback,
                              std::function<bool(const Scene&)> predicate) {
-    // 从栈底向上搜索目标场景
     for (int i = static_cast<int>(scenes_.size()) - 1; i >= 0; i--) {
         if (predicate(*scenes_[i])) {
-            // 找到目标：清除其上所有层
             while (static_cast<int>(scenes_.size()) > i + 1) {
                 scenes_.back()->Exit();
                 scenes_.pop_back();
             }
-            // 当前栈顶就是目标，重新 Enter (刷新状态)
             scenes_.back()->Exit();
             scenes_.pop_back();
             scenes_.push_back(std::move(fallback));
@@ -67,7 +60,6 @@ void SceneManager::ReturnTo(std::unique_ptr<Scene> fallback,
             return;
         }
     }
-    // 未找到：清空后 Push fallback
     if (!scenes_.empty()) {
         scenes_.back()->Exit();
     }
@@ -84,6 +76,73 @@ void SceneManager::ReturnToMenu() {
     ReturnTo(
         std::make_unique<MenuScene>(this),
         [](const Scene& s) { return dynamic_cast<const MenuScene*>(&s) != nullptr; });
+}
+
+// ============================================================
+//  延迟导航 (在 Update 回调内安全使用)
+// ============================================================
+
+void SceneManager::PostReturnToMenu() {
+    pendingAction_ = PendingAction::ReturnToMenu;
+    pendingScene_.reset();
+    pendingCustomAction_ = nullptr;
+}
+
+void SceneManager::PostPopScene() {
+    pendingAction_ = PendingAction::PopScene;
+    pendingScene_.reset();
+    pendingCustomAction_ = nullptr;
+}
+
+void SceneManager::PostSetupNext(std::unique_ptr<Scene> scene) {
+    pendingAction_ = PendingAction::SetupNext;
+    pendingScene_ = std::move(scene);
+    pendingCustomAction_ = nullptr;
+}
+
+void SceneManager::PostPushScene(std::unique_ptr<Scene> scene) {
+    pendingAction_ = PendingAction::PushScene;
+    pendingScene_ = std::move(scene);
+    pendingCustomAction_ = nullptr;
+}
+
+void SceneManager::PostAction(std::function<void()> action) {
+    pendingAction_ = PendingAction::Custom;
+    pendingScene_.reset();
+    pendingCustomAction_ = std::move(action);
+}
+
+void SceneManager::ProcessPendingActions() {
+    switch (pendingAction_) {
+        case PendingAction::ReturnToMenu:
+            TraceLog(LOG_INFO, "SceneManager: executing PostReturnToMenu");
+            ReturnToMenu();
+            break;
+        case PendingAction::PopScene:
+            TraceLog(LOG_INFO, "SceneManager: executing PostPopScene");
+            PopScene();
+            break;
+        case PendingAction::SetupNext:
+            TraceLog(LOG_INFO, "SceneManager: executing PostSetupNext");
+            SetupNext(std::move(pendingScene_));
+            break;
+        case PendingAction::PushScene:
+            TraceLog(LOG_INFO, "SceneManager: executing PostPushScene");
+            PushScene(std::move(pendingScene_));
+            break;
+        case PendingAction::Custom:
+            TraceLog(LOG_INFO, "SceneManager: executing PostAction (custom)");
+            if (pendingCustomAction_) {
+                pendingCustomAction_();
+                pendingCustomAction_ = nullptr;
+            }
+            TraceLog(LOG_INFO, "SceneManager: PostAction (custom) done");
+            break;
+        case PendingAction::None:
+            break;
+    }
+    pendingAction_ = PendingAction::None;
+    pendingScene_.reset();
 }
 
 // ============================================================
@@ -106,6 +165,9 @@ void SceneManager::ResetToScene(std::unique_ptr<Scene> scene) {
 void SceneManager::Update(float dt) {
     if (scenes_.empty()) return;
     scenes_.back()->Update(dt);
+
+    // 延迟导航: 场景在 Update 内调用 Post* 方法后, 在此执行实际切换
+    ProcessPendingActions();
 }
 
 void SceneManager::Render() {

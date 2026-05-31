@@ -1,0 +1,232 @@
+<section class="slide">
+  <div class="panel">
+    <div class="pageHead">
+      <div class="kicker">Technical Highlights</div>
+      <h2 class="pageTitle">技术亮点</h2>
+      <p class="pageSub">分层架构 · 语义化场景栈 · 组合式坦克设计 · 碰撞推力算法 · Host-Authoritative 联机</p>
+    </div>
+    <div class="subNav" id="subNav">
+      <button class="subNavBtn active" data-sub="0">总览</button>
+      <button class="subNavBtn" data-sub="1">场景引擎</button>
+      <button class="subNavBtn" data-sub="2">坦克系统</button>
+      <button class="subNavBtn" data-sub="3">IController</button>
+      <button class="subNavBtn" data-sub="4">碰撞与地图</button>
+      <button class="subNavBtn" data-sub="5">LAN 联机</button>
+      <div class="subPager">
+        <button class="subPagerBtn" id="subPrev">◀</button>
+        <span class="subCounter" id="subCounter">1 / 6</span>
+        <button class="subPagerBtn" id="subNext">▶</button>
+      </div>
+    </div>
+
+    <div class="subSlides" id="subSlides">
+
+      <!-- Sub-page 1: 总览 -->
+      <div class="subSlide active">
+        <div class="highlightLayout">
+          <div class="highlightIntro">
+            <h3>五层架构，依赖单向</h3>
+            <p>main → Scene → Game Logic → ECS → Core Engine → raylib / Winsock2。上层依赖下层，禁止反向。Network 层通过 PIMPL 隔离系统 socket，不污染引擎命名空间。</p>
+            <div class="chips">
+              <div class="chipBox"><b>14 个场景</b><span>7 热座 + 4 联机 + 3 共享，各司其职。</span></div>
+              <div class="chipBox"><b>5 种设计模式</b><span>组件 · 策略 · 工厂 · 观察者 · PIMPL。</span></div>
+              <div class="chipBox"><b>ECS 实体系统</b><span>Entity + 5 组件，数据与行为分离。</span></div>
+              <div class="chipBox"><b>零二进制素材</b><span>纹理和音效全部程序化生成。</span></div>
+            </div>
+          </div>
+          <div class="highlightVisual">
+            <div class="codeBlock" style="font-size: 15px; line-height: 1.6;">src/
+├── core/       Game · Window · Input · Audio · Event · Timer
+├── ecs/        Entity · Transform · Sprite · Collider · Health · Movement
+├── game/
+│   ├── tank/   Tank · TankFactory · IController (3 impls)
+│   ├── entities/  Bullet · Wall · Base · PowerUp
+│   ├── map/    GameMap · MapManager
+│   ├── systems/  CollisionSystem · ParticleSystem
+│   └── session/  GameSession · PlayerSlot[4]
+├── net/        NetworkManager (PIMPL) · NetProtocol · NetController
+├── scene/      SceneManager + 14 Scenes
+└── utils/      MathUtils · TextureGen · SoundGen · Random</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-page 2: 场景引擎 -->
+      <div class="subSlide">
+        <div class="highlightLayout">
+          <div class="highlightIntro">
+            <h3>六种导航语义，一条统一流程</h3>
+            <p>SceneManager 维护场景栈，提供 PushScene、PopScene、SetupNext、StartGame、ReturnTo、ReturnToMenu 六种操作。每个场景只声明意图，不关心栈结构。</p>
+            <div class="chips">
+              <div class="chipBox"><b>SetupNext</b><span>替换栈顶，设置页不堆叠。</span></div>
+              <div class="chipBox"><b>StartGame</b><span>保留 Menu+ModeSelect，清除设置链。</span></div>
+              <div class="chipBox"><b>PushScene</b><span>压入覆盖层（暂停、子菜单）。</span></div>
+              <div class="chipBox"><b>ReturnToMenu</b><span>搜索目标层，清除其上所有层。</span></div>
+            </div>
+          </div>
+          <div class="highlightVisual">
+            <div class="flowLine"><span class="scenePill">Menu</span><span class="arrow">→</span><span class="scenePill">Mode</span><span class="arrow">→</span><span class="scenePill">Setup</span><span class="arrow">→</span><span class="scenePill">Map</span><span class="arrow">→</span><span class="scenePill">Game</span><span class="arrow">→</span><span class="scenePill">Over</span></div>
+            <div class="stackPreview">[Menu]
+PushScene(ModeSelect)    → [Menu, ModeSelect]
+PushScene(Setup)         → [Menu, ModeSelect, Setup]
+SetupNext(MapSelect)     → [Menu, ModeSelect, MapSelect]
+StartGame(Game)          → [Menu, ModeSelect, Game]        ← 清除 Setup
+PushScene(Pause) overlay → [Menu, ModeSelect, Game, Pause]
+PopScene()               → [Menu, ModeSelect, Game]
+SetupNext(GameOver)      → [Menu, ModeSelect, GameOver]
+ENTER → SetupNext(MapSelect) → [Menu, ModeSelect, MapSelect]  ← 再来一局
+ESC → ReturnToMenu()     → [Menu]</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-page 3: 坦克系统 -->
+      <div class="subSlide">
+        <div class="highlightLayout">
+          <div class="highlightIntro">
+            <h3>组合优于继承，数据驱动</h3>
+            <p>一个 Tank 类承载所有类型。差异由 TankType 枚举 + TANK_STATS 属性表驱动；控制方式由 IController 策略接口切换。新增坦克类型只需加一行数据。</p>
+            <div class="chips">
+              <div class="chipBox"><b>TankStats 表</b><span>速度 / 生命 / 护甲 / 冷却 / 最大子弹数。</span></div>
+              <div class="chipBox"><b>3 种控制器</b><span>PlayerController · AIController · NetController。</span></div>
+              <div class="chipBox"><b>TankFactory</b><span>工厂模式，按 TankType + Controller 组装。</span></div>
+              <div class="chipBox"><b>护甲公式</b><span>effectiveDmg = max(1, bulletDmg - armor)。</span></div>
+            </div>
+          </div>
+          <div class="highlightVisual">
+            <div class="statGrid">
+              <div class="tankMini"><h4>LIGHT</h4><p>速度 100 · HP 1 · 甲 0 · CD 0.5s · 双发</p></div>
+              <div class="tankMini"><h4>MEDIUM</h4><p>速度 80 · HP 2 · 甲 1 · CD 0.7s · 单发</p></div>
+              <div class="tankMini"><h4>HEAVY</h4><p>速度 55 · HP 3 · 甲 2 · CD 1.0s · 单发</p></div>
+              <div class="tankMini"><h4>SPEED</h4><p>速度 130 · HP 1 · 甲 0 · CD 0.3s · 三连发</p></div>
+            </div>
+            <div class="codeBlock">class Tank {
+  TankType type_;                          // → 查 TANK_STATS 表
+  std::unique_ptr&lt;IController&gt; controller_; // Player / AI / Net
+  Entity* entity_;                          // ECS 实体
+  int team_;
+};
+
+// AIController: 三态 FSM
+PATROL → (敌距 &lt; 300px) → CHASE → (可射击) → ATTACK</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-page 4: IController -->
+      <div class="subSlide">
+        <div class="highlightLayout">
+          <div class="highlightIntro">
+            <h3>策略模式：同一坦克，三种控制</h3>
+            <p>IController 是一个极简接口，只有 Update 和 IsAI 两个方法。PlayerController 读键盘，AIController 运行三态状态机，NetController 接收网络输入。Tank 不关心谁在控制它。</p>
+            <div class="chips">
+              <div class="chipBox"><b>PlayerController</b><span>绑定 5 个按键，直接驱动坦克移动和射击。</span></div>
+              <div class="chipBox"><b>AIController</b><span>PATROL → CHASE → ATTACK 三态 FSM。</span></div>
+              <div class="chipBox"><b>NetController</b><span>接收 Host 转发的位掩码，模拟远程输入。</span></div>
+              <div class="chipBox"><b>TankFactory</b><span>工厂模式组装 Tank + Controller。</span></div>
+            </div>
+          </div>
+          <div class="highlightVisual">
+            <div class="codeBlock">// 策略接口 — 极简
+class IController {
+public:
+    virtual ~IController() = default;
+    virtual void Update(Tank& tank, float dt) = 0;
+    virtual bool IsAI() const = 0;
+};
+
+// PlayerController: 键盘 → 移动 + 射击
+class PlayerController : public IController {
+    int keyUp_, keyDown_, keyLeft_, keyRight_, keyFire_;
+};
+
+// AIController: 三态状态机
+class AIController : public IController {
+    enum class AIState { PATROL, CHASE, ATTACK };
+    AIState state_ = AIState::PATROL;
+    float detectRange_ = 300.f;  // 追击触发距离
+    Timer dirChangeTimer_{ 2.0f }; // 巡逻方向切换
+};
+
+// NetController: 网络输入位掩码
+class NetController : public IController {
+    uint8_t currentInput_ = 0;  // 上下左右+开火
+    void ApplyInput(uint8_t inputMask);
+};
+
+// TankFactory: 工厂模式组装
+static std::unique_ptr&lt;Tank&gt; CreatePlayerTank(
+    TankType type, int team, int kU, int kD, int kL, int kR, int kF);
+static std::unique_ptr&lt;Tank&gt; CreateAITank(
+    TankType type, int team);</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-page 5: 碰撞与地图 -->
+      <div class="subSlide">
+        <div class="highlightLayout">
+          <div class="highlightIntro">
+            <h3>重叠推力算法，T 型路口零穿墙</h3>
+            <p>13×13 瓦片网格，64px 瓦片。碰撞系统分三路：子弹-地图、坦克-地图、实体-实体。坦克碰墙时按 X/Y 轴独立检测所有重叠墙壁，计算净推力后一次性应用。</p>
+            <div class="chips">
+              <div class="chipBox"><b>BulletMap</b><span>砖墙破坏、钢墙消失、基地事件。</span></div>
+              <div class="chipBox"><b>TankMap</b><span>按轴分离 + 多墙推力合成。</span></div>
+              <div class="chipBox"><b>EntityEntity</b><span>层过滤 + AABB 碰撞检测。</span></div>
+              <div class="chipBox"><b>6 种瓦片</b><span>EMPTY · BRICK · STEEL · WATER · GRASS · BASE。</span></div>
+            </div>
+          </div>
+          <div class="highlightVisual">
+            <div class="tileLegend">
+              <div class="legendItem"><span class="swatch" style="background:#e5f0e8"></span>EMPTY 空地</div>
+              <div class="legendItem"><span class="swatch" style="background:linear-gradient(#c77b43,#a85c2d)"></span>BRICK 可破坏</div>
+              <div class="legendItem"><span class="swatch" style="background:linear-gradient(#b9c2d2,#718197)"></span>STEEL 不可破坏</div>
+              <div class="legendItem"><span class="swatch" style="background:linear-gradient(#48d6f1,#1cb2df)"></span>WATER 不通行</div>
+              <div class="legendItem"><span class="swatch" style="background:linear-gradient(#61d991,#1f9e57)"></span>GRASS 可通行遮挡</div>
+              <div class="legendItem"><span class="swatch" style="background:#ef4444"></span>BASE 触发胜负</div>
+            </div>
+            <div class="codeBlock">CollisionSystem
+  ├─ BulletMapCollision
+  │    BRICK → 破坏墙体 + 子弹消失
+  │    STEEL → 子弹消失
+  │    BASE  → 触发胜负事件
+  ├─ TankMapCollision
+  │    遍历所有重叠墙壁
+  │    按 X/Y 轴分组计算推力
+  │    应用净推力（T 型路口正确处理）
+  └─ EntityEntityCollision
+       层过滤 → AABB → 触发回调</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-page 6: LAN 联机 -->
+      <div class="subSlide">
+        <div class="highlightLayout">
+          <div class="highlightIntro">
+            <h3>Host 端权威，PIMPL 隔离</h3>
+            <p>Host 运行完整游戏逻辑，Client 只发送输入和渲染远程状态。Winsock2 头文件与 raylib 冲突，通过 PIMPL 将所有 socket 类型隐藏在 NetworkManager::Impl 中。</p>
+            <div class="chips">
+              <div class="chipBox"><b>Client → Host</b><span>60Hz 发送 InputState（位掩码）。</span></div>
+              <div class="chipBox"><b>Host → Client</b><span>20Hz 广播 GameState（全量状态）。</span></div>
+              <div class="chipBox"><b>PIMPL</b><span>NetworkManager::Impl 隐藏 winsock2.h。</span></div>
+              <div class="chipBox"><b>所有权转移</b><span>Lobby → Game: unique_ptr + 前向声明删除器。</span></div>
+            </div>
+          </div>
+          <div class="highlightVisual">
+            <div class="netDiagram">
+              <div class="netNode">CLIENT<span>LANGameScene<br>SendInput 60Hz<br>纯渲染 + 输入</span></div>
+              <div class="netNode">HOST<span>GameScene<br>BroadcastState 20Hz<br>权威逻辑 + 广播</span></div>
+              <div class="netTransfer">
+                <div class="transferRow">Client → Host：InputState (TCP) · 位掩码按键状态</div>
+                <div class="transferRow">Host → Client：GameState (TCP) · NetPlayerState + NetBulletState</div>
+                <div class="transferRow">协议头：[4B len][4B "TB90"][2B type][2B size][payload]</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>

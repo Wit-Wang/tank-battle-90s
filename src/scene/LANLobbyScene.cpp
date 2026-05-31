@@ -178,18 +178,23 @@ void LANLobbyScene::HostUpdate(float dt) {
         }
         net_->BroadcastTCP(start);
 
-        // 转移 NetworkManager 所有权给 GameScene
-        auto game = std::make_unique<GameScene>(manager_, std::move(session_));
-        game->SetNetworkManager(ReleaseNetwork());
-
-        // 栈: [Menu, LANModeSelect, LANLobby] → [Menu, Game]
-        manager_->ReturnToMenu();
-        manager_->PushScene(std::move(game));
+        // 延迟执行: 转移所有权 + 切换场景 (避免 use-after-free)
+        // 注意: 必须捕获 manager_ 指针副本，因为 ReturnToMenu() 会销毁 this
+        auto* mgr = manager_;
+        manager_->PostAction([this, mgr]() {
+            TraceLog(LOG_INFO, "HOST: starting game, transferring network ownership");
+            auto game = std::make_unique<GameScene>(mgr, std::move(session_));
+            game->SetNetworkManager(ReleaseNetwork());
+            TraceLog(LOG_INFO, "HOST: ReturnToMenu + PushScene(GameScene)");
+            mgr->ReturnToMenu();
+            mgr->PushScene(std::move(game));
+            TraceLog(LOG_INFO, "HOST: game scene pushed successfully");
+        });
     }
 
     // ESC: 退出 (回到主菜单)
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->ReturnToMenu();
+        manager_->PostReturnToMenu();
     }
 }
 
@@ -253,13 +258,18 @@ void LANLobbyScene::ClientUpdate(float dt) {
             if (!hostIP_.empty()) hostIP_.pop_back();
         }
 
-        // 简易 IP 输入 (数字和点)
+        // 简易 IP 输入 (主键盘 + 小键盘数字和点)
         for (int key = KEY_ZERO; key <= KEY_NINE; key++) {
             if (IsKeyPressed(key) && hostIP_.size() < 15) {
                 hostIP_ += static_cast<char>('0' + (key - KEY_ZERO));
             }
         }
-        if (IsKeyPressed(KEY_PERIOD) && hostIP_.size() < 15) {
+        for (int key = KEY_KP_0; key <= KEY_KP_9; key++) {
+            if (IsKeyPressed(key) && hostIP_.size() < 15) {
+                hostIP_ += static_cast<char>('0' + (key - KEY_KP_0));
+            }
+        }
+        if ((IsKeyPressed(KEY_PERIOD) || IsKeyPressed(KEY_KP_DECIMAL)) && hostIP_.size() < 15) {
             hostIP_ += '.';
         }
 
@@ -279,7 +289,7 @@ void LANLobbyScene::ClientUpdate(float dt) {
         }
 
         if (IsKeyPressed(KEY_ESCAPE)) {
-            manager_->PopScene();
+            manager_->PostPopScene();
         }
         return;
     }
@@ -312,7 +322,7 @@ void LANLobbyScene::ClientUpdate(float dt) {
 
     // ESC: 断开并返回
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->ReturnToMenu();
+        manager_->PostReturnToMenu();
     }
 }
 
@@ -355,11 +365,20 @@ void LANLobbyScene::HandleHostMessage(const NetMessage& msg) {
                 slot.tankType = static_cast<TankType>(msg.ReadPayload<uint8_t>(off)); off++;
                 slot.team     = msg.ReadPayload<uint8_t>(off);       off++;
             }
-            // 转移 NetworkManager 所有权给 LANGameScene
-            auto lanGame = std::make_unique<LANGameScene>(manager_, ReleaseNetwork(), session_, mySlot_);
-            // 栈: [Menu, LANLobby] → [Menu, LANGame]
-            manager_->ReturnToMenu();
-            manager_->PushScene(std::move(lanGame));
+            // 延迟执行: 转移所有权 + 切换场景 (避免 use-after-free)
+            // 捕获 session、mySlot、manager_ 副本，因为 ReturnToMenu() 会销毁 this
+            auto capturedSession = session_;
+            int capturedSlot = mySlot_;
+            auto* mgr = manager_;
+            manager_->PostAction([this, mgr, capturedSession, capturedSlot]() mutable {
+                TraceLog(LOG_INFO, "CLIENT: starting game, transferring network ownership");
+                auto lanGame = std::make_unique<LANGameScene>(
+                    mgr, ReleaseNetwork(), std::move(capturedSession), capturedSlot);
+                TraceLog(LOG_INFO, "CLIENT: ReturnToMenu + PushScene(LANGameScene)");
+                mgr->ReturnToMenu();
+                mgr->PushScene(std::move(lanGame));
+                TraceLog(LOG_INFO, "CLIENT: LANGameScene pushed successfully");
+            });
             break;
         }
         case NetMessageType::Kick: {

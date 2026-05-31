@@ -61,6 +61,8 @@ void Tank::Spawn(EntityManager& em, Vector2 position) {
             EventType::TankDestroyed, entity_->GetId(), team_
         });
         AudioManager::Instance().PlaySound("explosion");
+        // 停用实体，使其不再参与碰撞和更新
+        entity_->SetActive(false);
     };
 }
 
@@ -95,6 +97,9 @@ void Tank::Update(float dt) {
             if (sprite) sprite->tint = WHITE;
         }
     }
+
+    // 保存移动前位置，供碰撞系统判断移动轴
+    if (transform) transform->SavePosition();
 
     entity_->Update(dt);
 }

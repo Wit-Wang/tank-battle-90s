@@ -10,7 +10,7 @@
 // ============================================================
 //  网络协议常量
 // ============================================================
-constexpr uint16_t NET_DEFAULT_PORT      = 7777;
+constexpr uint16_t NET_DEFAULT_PORT      = 4562;
 constexpr uint32_t NET_MAGIC             = 0x54423930;  // "TB90"
 constexpr uint32_t NET_MAX_PACKET_SIZE   = 4096;
 constexpr uint32_t NET_MAX_MESSAGE_SIZE  = NET_MAX_PACKET_SIZE - 8;

@@ -44,10 +44,10 @@ void TeamSelectScene::Update(float dt) {
     }
 
     if (IsKeyPressed(KEY_ENTER)) {
-        manager_->SetupNext(std::make_unique<MapSelectScene>(manager_, std::move(session_)));
+        manager_->PostSetupNext(std::make_unique<MapSelectScene>(manager_, std::move(session_)));
     }
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->SetupNext(std::make_unique<SetupScene>(manager_, mode_));
+        manager_->PostSetupNext(std::make_unique<SetupScene>(manager_, mode_));
     }
 }
 

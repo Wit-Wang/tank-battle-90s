@@ -20,7 +20,7 @@ void ModeSelectScene::Update(float dt) {
     }
 
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->PopScene();
+        manager_->PostPopScene();
     }
 }
 

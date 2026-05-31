@@ -24,10 +24,13 @@ LANGameScene::LANGameScene(SceneManager* manager, NetworkManager* net, GameSessi
 LANGameScene::~LANGameScene() = default;
 
 void LANGameScene::Enter() {
+    TraceLog(LOG_INFO, "LANGameScene::Enter() - begin");
+    TraceLog(LOG_INFO, "LANGameScene::Enter() - loading map: %s", session_.GetMapPath().c_str());
     map_.LoadFromFile(session_.GetMapPath());
     gameOver_ = false;
     winningTeam_ = -1;
     gameStarted_ = true;
+    TraceLog(LOG_INFO, "LANGameScene::Enter() - done");
     disconnectTimer_ = 0.f;
     inputTimer_ = 0.f;
 
@@ -53,7 +56,7 @@ void LANGameScene::Update(float dt) {
         gameOverTimer_ += dt;
         if (gameOverTimer_ > 2.f) {
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) {
-                manager_->ReturnToMenu();
+                manager_->PostReturnToMenu();
             }
         }
         return;
@@ -69,12 +72,12 @@ void LANGameScene::Update(float dt) {
 
     // 超时检测: Host 可能已断开
     if (disconnectTimer_ > NET_TIMEOUT_SECONDS * 2.f) {
-        manager_->ReturnToMenu();
+        manager_->PostReturnToMenu();
     }
 
     // ESC: 断开连接并退出
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->ReturnToMenu();
+        manager_->PostReturnToMenu();
     }
 }
 
@@ -103,7 +106,7 @@ void LANGameScene::ProcessMessages() {
                 break;
             }
             case NetMessageType::ReturnToLobby:
-                manager_->ReturnToMenu();
+                manager_->PostReturnToMenu();
                 return;
             default: break;
         }

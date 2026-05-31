@@ -2,7 +2,11 @@
 
 #include "ecs/Component.h"
 #include "core/Types.h"
+#ifdef TANKGAME_SERVER
+#include "utils/raylib_stubs.h"
+#else
 #include "raylib.h"
+#endif
 #include <functional>
 
 /// 碰撞层：用于过滤不需要检测的碰撞对

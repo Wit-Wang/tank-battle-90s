@@ -16,6 +16,13 @@ Requires: CMake 3.20+, C++23 compiler. raylib is fetched automatically via CMake
 
 `CMAKE_EXPORT_COMPILE_COMMANDS` is ON — `build/compile_commands.json` is generated for IDE tooling.
 
+## Key Constants
+
+- **Screen**: 832×832 (13×13 tile grid, 64px per tile) — defined in `src/core/Types.h`
+- **Map format**: `.txt` files in `assets/maps/` organized by mode (`traditional/`, `attack_defend/`, `ffa/`)
+- **Assets**: Textures and sounds are **procedurally generated** at startup by `TextureGenerator` / `SoundGenerator` — the only binary assets are the font file and map text files
+- **No test suite** — there are no test targets, test frameworks, or CI configured
+
 ## Architecture
 
 A 90s-style top-down tank arena game with 2v2 team battles, local multiplayer, and LAN multiplayer.
@@ -42,11 +49,16 @@ graph LR
 
 ### Design Patterns
 - **Component Pattern**: Entity holds Components (Transform, Sprite, Collider, Health, Movement)
-- **Strategy Pattern**: Tank uses `IController` — `PlayerController` (keyboard) or `AIController`
+- **Strategy Pattern**: Tank uses `IController` — `PlayerController` (keyboard), `AIController`, or `NetController` (LAN)
 - **Factory Pattern**: `TankFactory` assembles Tank + Components + Controller from a `TankType` enum
-- **State Pattern**: `SceneManager` manages a stack of `Scene` subclasses
+- **State Pattern**: `SceneManager` manages a stack of `Scene` subclasses with 6 navigation semantics: `PushScene`, `PopScene`, `SetupNext` (replace top), `StartGame` (trim + push), `ReturnTo` (scan + pop), `ReturnToMenu`
 - **Observer Pattern**: `EventSystem` decouples game events from listeners
 - **PIMPL Pattern**: `NetworkManager` isolates Winsock2 from raylib
+- **Singleton**: `EventSystem`, `ResourceManager`, `AudioManager` (Meyers' singleton)
+
+### AI Controller
+
+`AIController` uses a 3-state FSM: **PATROL** → **CHASE** (enemy within 300px) → **ATTACK** (in range, fires on cooldown). Configured via `SetAllTanks()` and `SetBases()` static methods.
 
 ### Key Modules
 
@@ -72,6 +84,14 @@ All tanks share the `Tank` base class. Stats are driven by `TankType` enum + `TA
 - **SPEED**: extremely fast (130), fragile (1 HP), triple shot (0.3s)
 
 Control is via `IController` strategy — same Tank class works for human or AI players.
+
+### Network Protocol
+
+Binary protocol defined in `src/net/NetProtocol.h`. Messages: `[4B length][4B magic "TB90"][2B type][2B size][payload]`.
+- **TCP**: lobby/reliable messages (connection, lobby config, game start)
+- **UDP**: fast game state — host broadcasts at 20Hz (`NetPlayerState` + `NetBulletState`), client sends input at ~60Hz (`NetInputPayload` bit mask)
+- Host-authoritative: host runs all game logic, client is pure rendering (`LANGameScene`)
+- `NetworkManager` uses PIMPL to hide Winsock2; `NetworkOwner.h` provides a `unique_ptr` with forward-declared deleter for ownership transfer between scenes
 
 ### Conventions
 - Headers (`.h`) for declarations, source (`.cpp`) for implementations

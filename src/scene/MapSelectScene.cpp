@@ -69,10 +69,12 @@ void MapSelectScene::Update(float dt) {
 
     if (IsKeyPressed(KEY_ENTER)) {
         session_.ApplyMapSelection(mapManager_);
-        manager_->StartGame(std::make_unique<GameScene>(manager_, std::move(session_)));
+        manager_->PostAction([this]() {
+            manager_->StartGame(std::make_unique<GameScene>(manager_, std::move(session_)));
+        });
     }
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->SetupNext(std::make_unique<SetupScene>(manager_, std::move(session_)));
+        manager_->PostSetupNext(std::make_unique<SetupScene>(manager_, std::move(session_)));
     }
 }
 

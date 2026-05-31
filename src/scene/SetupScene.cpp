@@ -2,6 +2,7 @@
 #include "SceneManager.h"
 #include "MapSelectScene.h"
 #include "game/tank/TankType.h"
+#include "core/ResourceManager.h"
 #include "raylib.h"
 #include <cstdio>
 
@@ -59,12 +60,12 @@ void SetupScene::Update(float dt) {
 
     // ENTER → 直接进地图选择 (队伍已在本界面配置)
     if (IsKeyPressed(KEY_ENTER)) {
-        manager_->SetupNext(std::make_unique<MapSelectScene>(manager_, std::move(session_)));
+        manager_->PostSetupNext(std::make_unique<MapSelectScene>(manager_, std::move(session_)));
     }
 
     // ESC → 返回模式选择
     if (IsKeyPressed(KEY_ESCAPE)) {
-        manager_->PopScene();
+        manager_->PostPopScene();
     }
 }
 
@@ -189,27 +190,43 @@ void SetupScene::RenderSlot(int index) {
         DrawText(keys, lx, y + 60, 12, GRAY);
     }
 
-    // ---- 右半区: 坦克类型 + 属性 ----
+    // ---- 右半区: 坦克预览 + 类型 + 属性 ----
     int rx = boxX + 200;
+
+    // 坦克纹理预览
+    int previewTeam = (mode_ == GameMode::FREE_FOR_ALL) ? index : slot.team;
+    static const char* typeNames[] = { "light", "medium", "heavy", "speed" };
+    std::string texName = std::string("tank_") + typeNames[static_cast<int>(slot.tankType)] + "_team" + std::to_string(previewTeam);
+    auto& rm = ResourceManager::Instance();
+    if (rm.HasTexture(texName)) {
+        Texture2D& tex = rm.GetTexture(texName);
+        float previewSize = 48.f;
+        Rectangle src = { 0, 0, static_cast<float>(tex.width), static_cast<float>(tex.height) };
+        Rectangle dst = { static_cast<float>(rx), static_cast<float>(y + 5), previewSize, previewSize };
+        Color previewTint = editable ? WHITE : ColorAlpha(WHITE, 0.4f);
+        DrawTexturePro(tex, src, dst, {0, 0}, 0.f, previewTint);
+    }
+
+    int textX = rx + 55;
 
     if (editable) {
         // 可编辑: Q/E 切换坦克类型
         const auto& stats = GetTankStats(slot.tankType);
         if (mode_ == GameMode::FREE_FOR_ALL) {
-            DrawText("< ", rx, y + 8, 24, selected ? YELLOW : DARKGRAY);
-            DrawText(stats.name, rx + 25, y + 8, 24, WHITE);
-            DrawText(" >", rx + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
+            DrawText("< ", textX, y + 8, 24, selected ? YELLOW : DARKGRAY);
+            DrawText(stats.name, textX + 25, y + 8, 24, WHITE);
+            DrawText(" >", textX + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
         } else {
-            DrawText("Q ", rx, y + 8, 24, selected ? YELLOW : DARKGRAY);
-            DrawText(stats.name, rx + 25, y + 8, 24, WHITE);
-            DrawText(" E", rx + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
+            DrawText("Q ", textX, y + 8, 24, selected ? YELLOW : DARKGRAY);
+            DrawText(stats.name, textX + 25, y + 8, 24, WHITE);
+            DrawText(" E", textX + 25 + MeasureText(stats.name, 24) + 8, y + 8, 24, selected ? YELLOW : DARKGRAY);
         }
 
         // 属性数值
         char statBuf[128];
         snprintf(statBuf, sizeof(statBuf), "SPD:%.0f  HP:%d  ARM:%d  FIRE:%.1fs  BULLETS:%d",
                  stats.moveSpeed, stats.maxHealth, stats.armor, stats.fireCooldown, stats.maxBullets);
-        DrawText(statBuf, rx, y + 42, 12, LIGHTGRAY);
+        DrawText(statBuf, textX, y + 42, 12, LIGHTGRAY);
 
         // 属性可视化条
         int barY = y + 60;
@@ -235,8 +252,8 @@ void SetupScene::RenderSlot(int index) {
 
     } else {
         // AI: 显示 RANDOM
-        DrawText("RANDOM", rx, y + 8, 24, ORANGE);
-        DrawText("Type assigned at game start", rx, y + 40, 12, DARKGRAY);
-        DrawText("LIGHT / MEDIUM / HEAVY / SPEED", rx, y + 58, 12, DARKGRAY);
+        DrawText("RANDOM", textX, y + 8, 24, ORANGE);
+        DrawText("Type assigned at game start", textX, y + 40, 12, DARKGRAY);
+        DrawText("LIGHT / MEDIUM / HEAVY / SPEED", textX, y + 58, 12, DARKGRAY);
     }
 }

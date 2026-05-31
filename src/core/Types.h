@@ -1,6 +1,10 @@
 #pragma once
 
+#ifdef TANKGAME_SERVER
+#include "utils/raylib_stubs.h"
+#else
 #include "raylib.h"
+#endif
 #include <cstdint>
 #include <string>
 
