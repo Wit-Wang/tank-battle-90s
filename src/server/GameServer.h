@@ -44,12 +44,13 @@ private:
     MapManager mapManager_;
     int mapIndex_ = 0;
     float lobbyTimer_ = 0.f;
-    bool gameStartRequested_ = false;
+    float heartbeatTimer_ = 0.f;
 
     void LobbyUpdate(float dt);
     void HandleLobbyMessage(int clientSocket, const NetMessage& msg);
     void BroadcastLobbyState();
     void StartGame();
+    bool AllClientsReady() const;
 
     // ---- Game simulation ----
     GameMap map_;

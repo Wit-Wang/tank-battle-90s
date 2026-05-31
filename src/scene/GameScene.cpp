@@ -94,10 +94,13 @@ void GameScene::Update(float dt) {
                 return;
             }
 
-            // 热座模式: 进入结算场景
-            manager_->PostSetupNext(
-                std::make_unique<GameOverScene>(manager_, winningTeam_,
-                                                std::move(session_)));
+            // 热座模式: 进入结算场景 (只发送一次, 避免重复 move session)
+            if (!gameOverPosted_) {
+                gameOverPosted_ = true;
+                manager_->PostSetupNext(
+                    std::make_unique<GameOverScene>(manager_, winningTeam_,
+                                                    std::move(session_)));
+            }
         }
         return;
     }

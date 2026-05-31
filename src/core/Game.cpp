@@ -3,6 +3,8 @@
 #include "scene/MenuScene.h"
 #include "utils/TextureGenerator.h"
 #include "utils/SoundGenerator.h"
+#include <stdexcept>
+#include <cstdio>
 
 Game::Game() = default;
 Game::~Game() = default;
@@ -24,7 +26,20 @@ void Game::Run() {
     while (!window_.ShouldClose()) {
         float dt = GetFrameTime();
 
-        sceneManager_->Update(dt);
+        try {
+            sceneManager_->Update(dt);
+        } catch (const std::exception& e) {
+            TraceLog(LOG_ERROR, "EXCEPTION in Update: %s", e.what());
+            // 清理场景栈并返回菜单
+            sceneManager_.reset();
+            sceneManager_ = std::make_unique<SceneManager>();
+            sceneManager_->PushScene(std::make_unique<MenuScene>(sceneManager_.get()));
+        } catch (...) {
+            TraceLog(LOG_ERROR, "UNKNOWN EXCEPTION in Update");
+            sceneManager_.reset();
+            sceneManager_ = std::make_unique<SceneManager>();
+            sceneManager_->PushScene(std::make_unique<MenuScene>(sceneManager_.get()));
+        }
 
         window_.BeginFrame();
         sceneManager_->Render();

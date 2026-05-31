@@ -18,6 +18,7 @@ constexpr uint32_t NET_MAX_MESSAGE_SIZE  = NET_MAX_PACKET_SIZE - 8;
 constexpr float NET_STATE_TICK_INTERVAL  = 0.05f;   // 20Hz 状态广播
 constexpr float NET_INPUT_TICK_INTERVAL  = 0.016f;  // ~60Hz 输入发送
 constexpr float NET_TIMEOUT_SECONDS      = 5.0f;
+constexpr float NET_PING_INTERVAL        = 2.0f;   // send pings every 2s
 
 // ---- 客户端输入位掩码 ----
 constexpr uint8_t NET_INPUT_UP    = 1;

@@ -64,6 +64,7 @@ private:
     std::vector<std::pair<float,float>> pendingPowerUps_;
 
     bool gameOver_ = false;
+    bool gameOverPosted_ = false;  // 防止重复发送 PostSetupNext
     int winningTeam_ = -1;  // 获胜队伍 (FFA下为获胜玩家索引)
     float gameOverTimer_ = 0.f;
 

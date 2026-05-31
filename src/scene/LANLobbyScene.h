@@ -33,6 +33,8 @@ private:
     void HostUpdate(float dt);
     void BroadcastLobbyState();
     void HandleClientMessage(int clientSocket, const NetMessage& msg);
+    int  FindClientBySlot(int slot) const;
+    bool AllPlayersReady() const;
 
     // ---- Client 逻辑 ----
     void ClientUpdate(float dt);
@@ -54,6 +56,8 @@ private:
     int mapCount_ = 1;
     MapManager mapManager_;  // 保存扫描结果，避免重复扫描
     std::string localIP_;
+    bool hostReady_ = false;
+    float heartbeatTimer_ = 0.f;
 
     // Client 状态
     bool connected_ = false;
@@ -62,6 +66,7 @@ private:
     std::string connectStatus_;
     std::string hostIP_;
     int inputField_ = 0;  // 0-14: IP 输入字符位置
+    bool slotReady_[4] = {};  // 从 LobbyState 同步的准备状态
 
     // 连接计时
     float connectTimer_ = 0.f;

@@ -37,8 +37,7 @@ bool GameServer::Start(uint16_t port) {
     session_.SetGameMode(GameMode::TRADITIONAL);
 
     printf("[SERVER] Listening on port %d\n", port);
-    printf("[SERVER] Waiting for players to connect...\n");
-    printf("[SERVER] Type 'start' to begin the game.\n");
+    printf("[SERVER] Waiting for players to connect and ready up...\n");
 
     running_ = true;
     state_ = State::LOBBY;
@@ -105,7 +104,7 @@ void GameServer::AcceptNewConnections() {
     int newSock = net_.AcceptClient();
     if (newSock < 0) return;
 
-    // Find an available slot (skip slots already taken by connected clients)
+    // Find an available slot (server has no host reservation — slot 0 is available)
     int slot = -1;
     bool used[4] = {};
     for (auto& c : net_.GetClients()) {
@@ -117,7 +116,6 @@ void GameServer::AcceptNewConnections() {
     }
 
     if (slot < 0) {
-        // Server full
         NetMessage kick(NetMessageType::Kick);
         kick.WriteString("Server full");
         net_.SendTo(newSock, kick);
@@ -129,14 +127,14 @@ void GameServer::AcceptNewConnections() {
     // Assign slot
     auto& clients = net_.GetClients();
     clients.back().slotIndex = slot;
+    clients.back().lastPing = lobbyTimer_;
+    clients.back().ready = false;  // 新玩家默认未准备
     session_.GetSlot(slot).isHuman = true;
 
-    // Send acceptance
     NetMessage accepted(NetMessageType::JoinAccepted);
     accepted.WritePayload(static_cast<uint8_t>(slot));
     net_.SendTo(newSock, accepted);
 
-    // Broadcast new player joined
     NetMessage joined(NetMessageType::PlayerJoined);
     joined.WritePayload(static_cast<uint8_t>(slot));
     joined.WriteString("Player");
@@ -154,6 +152,27 @@ void GameServer::AcceptNewConnections() {
 void GameServer::LobbyUpdate(float dt) {
     lobbyTimer_ += dt;
 
+    // Heartbeat: send periodic pings, detect disconnected clients
+    heartbeatTimer_ += dt;
+    if (heartbeatTimer_ >= NET_PING_INTERVAL) {
+        heartbeatTimer_ = 0.f;
+        NetMessage ping(NetMessageType::Ping);
+        net_.BroadcastTCP(ping);
+
+        // Check for timed-out clients
+        auto& clients = net_.GetClients();
+        for (int i = static_cast<int>(clients.size()) - 1; i >= 0; i--) {
+            if (clients[i].lastPing > 0.f &&
+                lobbyTimer_ - clients[i].lastPing > NET_TIMEOUT_SECONDS) {
+                printf("[SERVER] Player P%d timed out\n", clients[i].slotIndex + 1);
+                int slot = clients[i].slotIndex;
+                session_.GetSlot(slot).isHuman = false;
+                net_.DisconnectClient(clients[i].socket);
+                BroadcastLobbyState();
+            }
+        }
+    }
+
     // Process messages from all clients
     for (auto& client : net_.GetClients()) {
         NetMessage msg;
@@ -162,14 +181,18 @@ void GameServer::LobbyUpdate(float dt) {
         }
     }
 
-    // Auto-start: after 10s with at least 1 player, or immediately if flag set
-    if (gameStartRequested_) {
-        gameStartRequested_ = false;
-        StartGame();
-    } else if (net_.ClientCount() > 0 && lobbyTimer_ > 10.f) {
-        printf("[SERVER] Auto-starting game (lobby timeout)\n");
+    // Start game when all connected players are ready (at least 1 player required)
+    if (net_.ClientCount() > 0 && AllClientsReady()) {
+        printf("[SERVER] All players ready, starting game\n");
         StartGame();
     }
+}
+
+bool GameServer::AllClientsReady() const {
+    for (const auto& client : net_.GetClients()) {
+        if (!client.ready) return false;
+    }
+    return true;
 }
 
 void GameServer::HandleLobbyMessage(int clientSocket, const NetMessage& msg) {
@@ -190,6 +213,9 @@ void GameServer::HandleLobbyMessage(int clientSocket, const NetMessage& msg) {
             int ci = net_.FindClientBySocket(clientSocket);
             if (ci >= 0) {
                 net_.GetClients()[ci].ready = !net_.GetClients()[ci].ready;
+                printf("[SERVER] Player P%d ready=%d\n",
+                       net_.GetClients()[ci].slotIndex + 1,
+                       net_.GetClients()[ci].ready ? 1 : 0);
             }
             BroadcastLobbyState();
             break;
@@ -197,6 +223,14 @@ void GameServer::HandleLobbyMessage(int clientSocket, const NetMessage& msg) {
         case NetMessageType::Ping: {
             NetMessage pong(NetMessageType::Pong);
             net_.SendTo(clientSocket, pong);
+            break;
+        }
+        case NetMessageType::Pong: {
+            // Client replied to our ping, update lastPing
+            int ci = net_.FindClientBySocket(clientSocket);
+            if (ci >= 0) {
+                net_.GetClients()[ci].lastPing = lobbyTimer_;
+            }
             break;
         }
         default:
@@ -214,6 +248,15 @@ void GameServer::BroadcastLobbyState() {
         state.WritePayload(static_cast<uint8_t>(slot.isHuman ? 1 : 0));
         state.WritePayload(static_cast<uint8_t>(static_cast<int>(slot.tankType)));
         state.WritePayload(static_cast<uint8_t>(slot.team));
+        // Ready flag
+        bool ready = false;
+        if (slot.isHuman) {
+            int ci = net_.FindClientBySocket(-1);  // need to find by slot
+            for (const auto& c : net_.GetClients()) {
+                if (c.slotIndex == i) { ready = c.ready; break; }
+            }
+        }
+        state.WritePayload(static_cast<uint8_t>(ready ? 1 : 0));
     }
 
     net_.BroadcastTCP(state);
@@ -665,6 +708,13 @@ void GameServer::CleanupGame() {
         slot.respawnTimer = 0.f;
         // Keep isHuman/team/tankType as set in lobby
     }
+
+    // Reset all client ready flags
+    for (auto& client : net_.GetClients()) {
+        client.ready = false;
+    }
+    lobbyTimer_ = 0.f;
+    heartbeatTimer_ = 0.f;
 
     printf("[SERVER] Game state cleaned up\n");
 }

@@ -29,7 +29,9 @@ LANLobbyScene::~LANLobbyScene() {
 
 void LANLobbyScene::Enter() {
     lobbyTimer_ = 0.f;
+    heartbeatTimer_ = 0.f;
     currentSlot_ = 0;
+    hostReady_ = false;
     session_.SetGameMode(GameMode::TRADITIONAL);  // LAN 默认传统模式
 
     if (isHost_) {
@@ -69,51 +71,66 @@ void LANLobbyScene::Update(float dt) {
 //  Host Update
 // ============================================================
 void LANLobbyScene::HostUpdate(float dt) {
+    // 心跳: 定期向客户端发 Ping, 检测超时
+    heartbeatTimer_ += dt;
+    if (heartbeatTimer_ >= NET_PING_INTERVAL) {
+        heartbeatTimer_ = 0.f;
+        NetMessage ping(NetMessageType::Ping);
+        net_->BroadcastTCP(ping);
+        // 检查超时的客户端
+        auto& clients = net_->GetClients();
+        for (int i = static_cast<int>(clients.size()) - 1; i >= 0; i--) {
+            if (clients[i].lastPing > 0.f &&
+                lobbyTimer_ - clients[i].lastPing > NET_TIMEOUT_SECONDS) {
+                printf("[HOST] Client P%d timed out\n", clients[i].slotIndex + 1);
+                int slot = clients[i].slotIndex;
+                session_.GetSlot(slot).isHuman = false;
+                net_->DisconnectClient(clients[i].socket);
+                BroadcastLobbyState();
+            }
+        }
+    }
+
     // 接受新客户端
     int newSock = net_->AcceptClient();
     if (newSock >= 0) {
-        // 分配槽位 (跳过已有客户端的槽位, 最多 4 人)
+        // 分配槽位: 找第一个空闲的 AI 槽位 (slot 0 保留给 host)
         int slot = -1;
         bool used[4] = {};
         for (auto& c : net_->GetClients()) {
             if (c.slotIndex >= 0 && c.slotIndex < 4)
                 used[c.slotIndex] = true;
         }
-        for (int i = 0; i < 4; i++) {
-            if (!session_.GetSlot(i).isHuman || i == 0) {
-                // 找一个 AI 槽位给客户端 (slot 0 保留给 host)
-                if (i > 0 && !used[i]) { slot = i; break; }
-            }
+        for (int i = 1; i < 4; i++) {
+            if (!used[i]) { slot = i; break; }
         }
         if (slot < 0) {
-            // 所有槽位已满, 踢出
             NetMessage kick(NetMessageType::Kick);
             kick.WriteString("Server full");
             net_->SendTo(newSock, kick);
             net_->DisconnectClient(newSock);
         } else {
-            // 分配槽位
             auto& clients = net_->GetClients();
             clients.back().slotIndex = slot;
+            clients.back().lastPing = lobbyTimer_;
             session_.GetSlot(slot).isHuman = true;
+            // 新加入的客户端默认未准备
+            clients.back().ready = false;
 
-            // 发送接受消息
             NetMessage accepted(NetMessageType::JoinAccepted);
             accepted.WritePayload(static_cast<uint8_t>(slot));
             net_->SendTo(newSock, accepted);
 
-            // 广播新玩家加入
             NetMessage joined(NetMessageType::PlayerJoined);
             joined.WritePayload(static_cast<uint8_t>(slot));
             joined.WriteString("Player");
             net_->BroadcastTCP(joined);
 
-            // 发送当前大厅状态
             BroadcastLobbyState();
         }
     }
 
-    // 处理客户端消息 (逐个检查)
+    // 处理客户端消息
     for (auto& client : net_->GetClients()) {
         NetMessage msg;
         while (net_->ReceiveFromClient(client.socket, msg)) {
@@ -154,8 +171,14 @@ void LANLobbyScene::HostUpdate(float dt) {
         BroadcastLobbyState();
     }
 
-    // ENTER: 开始游戏
+    // ENTER: 准备 / 取消准备 (host 切换自己的 ready 状态)
     if (IsKeyPressed(KEY_ENTER)) {
+        hostReady_ = !hostReady_;
+        BroadcastLobbyState();
+    }
+
+    // 所有人准备好后自动开始游戏
+    if (hostReady_ && AllPlayersReady()) {
         // 设置地图路径
         if (mapIndex_ >= 0 && mapIndex_ < mapManager_.GetCount()) {
             session_.SetMapPath(mapManager_.GetMapInfo(mapIndex_).filePath);
@@ -163,13 +186,10 @@ void LANLobbyScene::HostUpdate(float dt) {
             session_.SetMapPath("assets/maps/classic.txt");
         }
 
-        // 随机分配 AI 坦克类型 (在发送 GameStart 之前，确保客户端收到随机结果)
         session_.RandomizeAITypes();
 
-        // 通知所有客户端游戏开始 (包含完整会话数据)
         NetMessage start(NetMessageType::GameStart);
         start.WriteString(session_.GetMapPath());
-        // 写入 4 个槽位配置
         for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
             const auto& slot = session_.GetSlot(i);
             start.WritePayload(static_cast<uint8_t>(slot.isHuman ? 1 : 0));
@@ -178,8 +198,6 @@ void LANLobbyScene::HostUpdate(float dt) {
         }
         net_->BroadcastTCP(start);
 
-        // 延迟执行: 转移所有权 + 切换场景 (避免 use-after-free)
-        // 注意: 必须捕获 manager_ 指针副本，因为 ReturnToMenu() 会销毁 this
         auto* mgr = manager_;
         manager_->PostAction([this, mgr]() {
             TraceLog(LOG_INFO, "HOST: starting game, transferring network ownership");
@@ -196,6 +214,16 @@ void LANLobbyScene::HostUpdate(float dt) {
     if (IsKeyPressed(KEY_ESCAPE)) {
         manager_->PostReturnToMenu();
     }
+}
+
+bool LANLobbyScene::AllPlayersReady() const {
+    // 检查所有人类槽位是否都已准备
+    // host (slot 0) 用 hostReady_
+    if (!hostReady_) return false;
+    for (auto& client : net_->GetClients()) {
+        if (client.slotIndex >= 0 && !client.ready) return false;
+    }
+    return true;
 }
 
 void LANLobbyScene::HandleClientMessage(int clientSocket, const NetMessage& msg) {
@@ -216,6 +244,9 @@ void LANLobbyScene::HandleClientMessage(int clientSocket, const NetMessage& msg)
             int ci = net_->FindClientBySocket(clientSocket);
             if (ci >= 0) {
                 net_->GetClients()[ci].ready = !net_->GetClients()[ci].ready;
+                printf("[HOST] Player P%d ready=%d\n",
+                       net_->GetClients()[ci].slotIndex + 1,
+                       net_->GetClients()[ci].ready ? 1 : 0);
             }
             BroadcastLobbyState();
             break;
@@ -223,6 +254,14 @@ void LANLobbyScene::HandleClientMessage(int clientSocket, const NetMessage& msg)
         case NetMessageType::Ping: {
             NetMessage pong(NetMessageType::Pong);
             net_->SendTo(clientSocket, pong);
+            break;
+        }
+        case NetMessageType::Pong: {
+            // 客户端回复心跳, 更新 lastPing
+            int ci = net_->FindClientBySocket(clientSocket);
+            if (ci >= 0) {
+                net_->GetClients()[ci].lastPing = lobbyTimer_;
+            }
             break;
         }
         default: break;
@@ -235,15 +274,32 @@ void LANLobbyScene::BroadcastLobbyState() {
     // 写入地图索引
     state.WritePayload(static_cast<uint16_t>(mapIndex_));
 
-    // 写入 4 个槽位
+    // 写入 4 个槽位 (isHuman, tankType, team, ready)
     for (int i = 0; i < 4; i++) {
         const auto& slot = session_.GetSlot(i);
         state.WritePayload(static_cast<uint8_t>(slot.isHuman ? 1 : 0));
         state.WritePayload(static_cast<uint8_t>(static_cast<int>(slot.tankType)));
         state.WritePayload(static_cast<uint8_t>(slot.team));
+        // ready 标志: host (slot 0) 用自己的 hostReady_, 客户端用 ConnectedClient.ready
+        bool ready = false;
+        if (i == 0) {
+            ready = hostReady_;
+        } else {
+            int ci = FindClientBySlot(i);
+            if (ci >= 0) ready = net_->GetClients()[ci].ready;
+        }
+        state.WritePayload(static_cast<uint8_t>(ready ? 1 : 0));
     }
 
     net_->BroadcastTCP(state);
+}
+
+int LANLobbyScene::FindClientBySlot(int slot) const {
+    for (size_t i = 0; i < net_->GetClients().size(); i++) {
+        if (net_->GetClients()[i].slotIndex == slot)
+            return static_cast<int>(i);
+    }
+    return -1;
 }
 
 // ============================================================
@@ -320,6 +376,12 @@ void LANLobbyScene::ClientUpdate(float dt) {
         }
     }
 
+    // ENTER: 准备 / 取消准备
+    if (IsKeyPressed(KEY_ENTER) && mySlot_ >= 0) {
+        NetMessage ready(NetMessageType::ClientReady);
+        net_->Send(ready);
+    }
+
     // ESC: 断开并返回
     if (IsKeyPressed(KEY_ESCAPE)) {
         manager_->PostReturnToMenu();
@@ -350,14 +412,14 @@ void LANLobbyScene::HandleHostMessage(const NetMessage& msg) {
                 slot.isHuman  = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;
                 slot.tankType = static_cast<TankType>(msg.ReadPayload<uint8_t>(offset)); offset++;
                 slot.team     = msg.ReadPayload<uint8_t>(offset);       offset++;
+                slotReady_[i] = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;
             }
             break;
         }
         case NetMessageType::GameStart: {
-            // 解析完整会话数据: 地图路径 + 4 个槽位配置
             std::size_t off = 0;
             std::string mapPath = msg.ReadString(off);
-            off += 2 + mapPath.size();  // 2 bytes for uint16_t string length prefix
+            off += 2 + mapPath.size();
             session_.SetMapPath(mapPath);
             for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
                 auto& slot = session_.GetSlot(i);
@@ -365,8 +427,6 @@ void LANLobbyScene::HandleHostMessage(const NetMessage& msg) {
                 slot.tankType = static_cast<TankType>(msg.ReadPayload<uint8_t>(off)); off++;
                 slot.team     = msg.ReadPayload<uint8_t>(off);       off++;
             }
-            // 延迟执行: 转移所有权 + 切换场景 (避免 use-after-free)
-            // 捕获 session、mySlot、manager_ 副本，因为 ReturnToMenu() 会销毁 this
             auto capturedSession = session_;
             int capturedSlot = mySlot_;
             auto* mgr = manager_;
@@ -387,8 +447,13 @@ void LANLobbyScene::HandleHostMessage(const NetMessage& msg) {
             connected_ = false;
             break;
         }
+        case NetMessageType::Ping: {
+            // 心跳: 回复 Pong
+            NetMessage pong(NetMessageType::Pong);
+            net_->Send(pong);
+            break;
+        }
         case NetMessageType::Pong: {
-            // 心跳回复
             break;
         }
         default: break;
@@ -432,8 +497,13 @@ void LANLobbyScene::RenderHost() {
         RenderSlot(i, 170 + i * 90, i == currentSlot_, true);
     }
 
+    // 准备状态提示
+    const char* readyHint = hostReady_ ? "You are READY (ENTER to cancel)" : "Press ENTER to ready up";
+    Color readyHintColor = hostReady_ ? GREEN : YELLOW;
+    DrawText(readyHint, (sw - MeasureText(readyHint, 18)) / 2, 730, 18, readyHintColor);
+
     // 操作提示
-    const char* hint = "UP/DOWN=Slot  LEFT/RIGHT=Team  Q/E=Tank  A/D=Map  ENTER=Start  ESC=Cancel";
+    const char* hint = "UP/DOWN=Slot  LEFT/RIGHT=Team  Q/E=Tank  A/D=Map  ENTER=Ready  ESC=Cancel";
     DrawText(hint, (sw - MeasureText(hint, 16)) / 2, 760, 16, YELLOW);
 }
 
@@ -475,8 +545,14 @@ void LANLobbyScene::RenderClient() {
         RenderSlot(i, 120 + i * 100, i == currentSlot_, false);
     }
 
+    // 准备状态提示
+    bool myReady = (mySlot_ >= 0 && mySlot_ < 4) ? slotReady_[mySlot_] : false;
+    const char* readyHint = myReady ? "You are READY (ENTER to cancel)" : "Press ENTER to ready up";
+    Color readyHintColor = myReady ? GREEN : YELLOW;
+    DrawText(readyHint, (sw - MeasureText(readyHint, 18)) / 2, 660, 18, readyHintColor);
+
     // 操作提示
-    const char* hint = "UP/DOWN=Browse  LEFT/RIGHT=Your Tank  ESC=Disconnect";
+    const char* hint = "UP/DOWN=Browse  LEFT/RIGHT=Your Tank  ENTER=Ready  ESC=Disconnect";
     DrawText(hint, (sw - MeasureText(hint, 16)) / 2, 700, 16, YELLOW);
 }
 
@@ -518,11 +594,28 @@ void LANLobbyScene::RenderSlot(int index, int y, bool selected, bool isHostView)
     const char* teamStr = (slot.team == 0) ? "RED" : "BLUE";
     DrawText(teamStr, boxX + 420, y + 12, 20, teamColor);
 
-    // AI 锁定标记 / "YOU" 标记
+    // AI 锁定标记 / "YOU" 标记 / 准备状态
     if (!slot.isHuman && !isHostView) {
         DrawText("LOCKED", boxX + 480, y + 12, 14, GRAY);
     }
     if (!isHostView && index == mySlot_) {
         DrawText("YOU", boxX + 480, y + 12, 16, YELLOW);
+    }
+
+    // 准备状态标记
+    if (slot.isHuman) {
+        bool ready = false;
+        if (isHostView) {
+            if (index == 0) ready = hostReady_;
+            else {
+                int ci = FindClientBySlot(index);
+                if (ci >= 0) ready = net_->GetClients()[ci].ready;
+            }
+        } else {
+            ready = slotReady_[index];
+        }
+        const char* readyStr = ready ? "READY" : "NOT READY";
+        Color readyColor = ready ? GREEN : RED;
+        DrawText(readyStr, boxX + 480, y + 40, 14, readyColor);
     }
 }

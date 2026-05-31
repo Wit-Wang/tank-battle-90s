@@ -12,13 +12,8 @@ static void GenerateAndRegister(const std::string& name, float duration,
     int frameCount = static_cast<int>(SAMPLE_RATE * duration);
     int sampleCount = frameCount * CHANNELS;
 
-    Wave wave = { 0 };
-    wave.sampleRate = SAMPLE_RATE;
-    wave.sampleSize = 32;
-    wave.channels = CHANNELS;
-    wave.frameCount = frameCount;
-
-    float* data = new float[sampleCount];
+    // 使用 16 位整数格式，兼容所有平台音频设备
+    int16_t* data = new int16_t[sampleCount];
     for (int i = 0; i < frameCount; i++) {
         float t = static_cast<float>(i) / SAMPLE_RATE;
         float progress = t / duration;
@@ -40,11 +35,17 @@ static void GenerateAndRegister(const std::string& name, float duration,
         if (sample > 1.f) sample = 1.f;
         if (sample < -1.f) sample = -1.f;
 
-        // 写入两个声道
-        data[i * 2]     = sample;
-        data[i * 2 + 1] = sample;
+        // 转换为 16 位整数
+        auto pcm = static_cast<int16_t>(sample * 32767.f);
+        data[i * 2]     = pcm;
+        data[i * 2 + 1] = pcm;
     }
 
+    Wave wave = { 0 };
+    wave.sampleRate = SAMPLE_RATE;
+    wave.sampleSize = 16;
+    wave.channels = CHANNELS;
+    wave.frameCount = frameCount;
     wave.data = data;
 
     Sound sound = LoadSoundFromWave(wave);
