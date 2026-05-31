@@ -49,15 +49,21 @@ private:
     // ---- Lobby ----
     GameSession session_;
     MapManager mapManager_;
-    int mapIndex_ = 0;
+    std::vector<int> modeMapIndices_;  // 当前模式下的地图索引列表
+    int modeMapIdx_ = 0;               // 在 modeMapIndices_ 中的当前位置
+    int mapIndex_ = 0;                 // 全局地图索引 (供 BroadcastLobbyState 使用)
     float lobbyTimer_ = 0.f;
     float heartbeatTimer_ = 0.f;
+    int nextSlot_ = 0;  // 下一个玩家分配的槽位 (用于按次序分队)
 
     void LobbyUpdate(float dt);
     void HandleLobbyMessage(int clientSocket, const NetMessage& msg);
     void BroadcastLobbyState();
     void StartGame();
     bool AllClientsReady() const;
+    void HandleServerInput();         // 处理 P1 的 stdin 输入 (Q/E/A/D)
+    void RefreshModeMaps();           // 刷新当前模式的地图列表
+    void AssignTeamForSlot(int slot); // 按次序自动分配队伍
 
     // ---- Game simulation ----
     GameMap map_;

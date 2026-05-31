@@ -4,17 +4,39 @@
 #include <sstream>
 
 bool GameMap::LoadFromFile(const std::string& path) {
-    // 简化版：使用文本格式加载 (后续可改为 JSON)
-    // 格式：每行 13 个数字 (0-5)，空格分隔
+    // 格式：可选 #modes: 元数据头 + 每行 13 个数字 (0-5)，空格分隔
     std::ifstream file(path);
     if (!file.is_open()) return false;
 
     tiles_.clear();
+    supportedModes_.clear();
     tiles_.resize(MAP_ROWS, std::vector<TileType>(MAP_COLS, TileType::EMPTY));
 
     std::string line;
     int row = 0;
     while (std::getline(file, line) && row < MAP_ROWS) {
+        // 跳过空行
+        if (line.empty()) continue;
+
+        // 解析元数据头: #modes:traditional,ffa
+        if (line[0] == '#') {
+            const std::string tag = "#modes:";
+            if (line.rfind(tag, 0) == 0) {
+                std::string modes = line.substr(tag.size());
+                std::istringstream ms(modes);
+                std::string modeName;
+                while (std::getline(ms, modeName, ',')) {
+                    // 去除前后空格
+                    while (!modeName.empty() && modeName.front() == ' ') modeName.erase(0, 1);
+                    while (!modeName.empty() && modeName.back() == ' ') modeName.pop_back();
+                    if (modeName == "traditional")     supportedModes_.push_back(GameMode::TRADITIONAL);
+                    else if (modeName == "attack_defend") supportedModes_.push_back(GameMode::ATTACK_DEFEND);
+                    else if (modeName == "ffa")        supportedModes_.push_back(GameMode::FREE_FOR_ALL);
+                }
+            }
+            continue;  // 元数据行不计入瓦片
+        }
+
         std::istringstream iss(line);
         int val;
         int col = 0;
@@ -57,6 +79,17 @@ bool GameMap::LoadFromFile(const std::string& path) {
         basePosition_ = { TILE_SIZE * 6 + TILE_SIZE / 2.f, TILE_SIZE * (MAP_ROWS - 1) + TILE_SIZE / 2.f };
         teamBasePositions_[0] = { TILE_SIZE * 6 + TILE_SIZE / 2.f, TILE_SIZE / 2.f };
         teamBasePositions_[1] = { TILE_SIZE * 6 + TILE_SIZE / 2.f, TILE_SIZE * (MAP_ROWS - 1) + TILE_SIZE / 2.f };
+    }
+
+    // 如果没有 #modes: 元数据头, 根据基地数量推断支持的模式
+    if (supportedModes_.empty()) {
+        if (basePositions.size() >= 2) {
+            supportedModes_ = { GameMode::TRADITIONAL, GameMode::ATTACK_DEFEND, GameMode::FREE_FOR_ALL };
+        } else if (basePositions.size() == 1) {
+            supportedModes_ = { GameMode::ATTACK_DEFEND, GameMode::FREE_FOR_ALL };
+        } else {
+            supportedModes_ = { GameMode::FREE_FOR_ALL };
+        }
     }
 
     // 出生点: 4角 (所有模式通用)

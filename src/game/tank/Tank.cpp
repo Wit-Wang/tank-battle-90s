@@ -63,6 +63,9 @@ void Tank::Spawn(EntityManager& em, Vector2 position) {
         AudioManager::Instance().PlaySound("explosion");
         // 停用实体，使其不再参与碰撞和更新
         entity_->SetActive(false);
+        // 标记死亡并清除指针，避免 RemoveInactive 后悬挂指针
+        dead_ = true;
+        entity_ = nullptr;
     };
 }
 
@@ -174,6 +177,7 @@ void Tank::TakeDamage(int amount) {
 }
 
 bool Tank::IsDead() const {
+    if (dead_) return true;
     auto* health = entity_ ? entity_->GetComponent<HealthComponent>() : nullptr;
     return !health || health->IsDead();
 }

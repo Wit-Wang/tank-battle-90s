@@ -273,6 +273,8 @@ void LANLobbyScene::BroadcastLobbyState() {
 
     // 写入地图索引
     state.WritePayload(static_cast<uint16_t>(mapIndex_));
+    // 写入游戏模式
+    state.WritePayload(static_cast<uint8_t>(static_cast<int>(session_.GetGameMode())));
 
     // 写入 4 个槽位 (isHuman, tankType, team, ready)
     for (int i = 0; i < 4; i++) {
@@ -407,6 +409,8 @@ void LANLobbyScene::HandleHostMessage(const NetMessage& msg) {
             std::size_t offset = 0;
             mapIndex_ = msg.ReadPayload<uint16_t>(offset);
             offset += 2;
+            int gameMode = msg.ReadPayload<uint8_t>(offset); offset++;
+            session_.SetGameMode(static_cast<GameMode>(gameMode));
             for (int i = 0; i < 4; i++) {
                 auto& slot = session_.GetSlot(i);
                 slot.isHuman  = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;

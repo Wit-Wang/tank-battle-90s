@@ -34,10 +34,15 @@ public:
     const std::string& GetMapPath() const { return mapPath_; }
     void SetMapPath(const std::string& path) { mapPath_ = path; }
 
+    /// 攻防战: 共享命池 (0=攻方, 1=守方)
+    int  GetSharedLives(int team) const { return sharedLives_[team]; }
+    int& SharedLives(int team) { return sharedLives_[team]; }
+
     static constexpr int SLOT_COUNT = 4;
 
 private:
     GameMode mode_ = GameMode::TRADITIONAL;
     std::array<PlayerSlot, SLOT_COUNT> slots_;
     std::string mapPath_;
+    int sharedLives_[2] = {0, 0};  // 攻防战: 各队共享命
 };

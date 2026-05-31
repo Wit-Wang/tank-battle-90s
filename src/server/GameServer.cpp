@@ -57,19 +57,20 @@ bool GameServer::Start(uint16_t port) {
         return false;
     }
 
-    // Scan maps for Traditional mode (default)
-    mapManager_.ScanMapsForMode("assets/maps", GameMode::TRADITIONAL);
-    if (mapManager_.GetCount() > 0) {
-        mapIndex_ = 0;
-    }
-
+    // Scan ALL maps with metadata
+    mapManager_.ScanMaps("assets/maps");
     session_.SetGameMode(GameMode::TRADITIONAL);
+    RefreshModeMaps();
 
     printf("[SERVER] Listening on port %d\n", port);
+    printf("[SERVER] Loaded %d maps (%d for current mode)\n",
+           mapManager_.GetCount(), static_cast<int>(modeMapIndices_.size()));
+    printf("[SERVER] Controls: Q/E=Mode  A/D=Map  Ctrl+C=Quit\n");
     printf("[SERVER] Waiting for players to connect and ready up...\n");
 
     running_ = true;
     state_ = State::LOBBY;
+    nextSlot_ = 0;
     return true;
 }
 
@@ -88,11 +89,6 @@ void GameServer::Run() {
         // 检查外部退出信号 (Ctrl+C)
         if (extRunning_ && !*extRunning_) {
             printf("[SERVER] Signal received, shutting down...\n");
-            break;
-        }
-        // 检查 'q' 键退出
-        if (CheckQuitKey()) {
-            printf("[SERVER] Quit key pressed, shutting down...\n");
             break;
         }
 
@@ -164,12 +160,13 @@ void GameServer::AcceptNewConnections() {
         return;
     }
 
-    // Assign slot
+    // Assign slot and team by join order
     auto& clients = net_.GetClients();
     clients.back().slotIndex = slot;
     clients.back().lastPing = lobbyTimer_;
-    clients.back().ready = false;  // 新玩家默认未准备
+    clients.back().ready = false;
     session_.GetSlot(slot).isHuman = true;
+    AssignTeamForSlot(slot);
 
     NetMessage accepted(NetMessageType::JoinAccepted);
     accepted.WritePayload(static_cast<uint8_t>(slot));
@@ -182,7 +179,8 @@ void GameServer::AcceptNewConnections() {
 
     BroadcastLobbyState();
 
-    printf("[SERVER] Player joined as P%d\n", slot + 1);
+    printf("[SERVER] Player joined as P%d (team %d)\n",
+           slot + 1, session_.GetSlot(slot).team);
 }
 
 // ============================================================
@@ -191,6 +189,9 @@ void GameServer::AcceptNewConnections() {
 
 void GameServer::LobbyUpdate(float dt) {
     lobbyTimer_ += dt;
+
+    // Process server stdin input (Q/E=mode, A/D=map)
+    HandleServerInput();
 
     // Heartbeat: send periodic pings, detect disconnected clients
     heartbeatTimer_ += dt;
@@ -278,10 +279,128 @@ void GameServer::HandleLobbyMessage(int clientSocket, const NetMessage& msg) {
     }
 }
 
+// ============================================================
+//  Server input & mode/map management
+// ============================================================
+
+void GameServer::HandleServerInput() {
+#ifdef _WIN32
+    if (!_kbhit()) return;
+    int ch = _getch();
+    // 处理方向键前缀
+    if (ch == 0 || ch == 0xE0) {
+        ch = _getch();
+        // 方向键暂不处理
+        return;
+    }
+#else
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    struct timeval tv = { 0, 0 };
+    if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &tv) <= 0) return;
+    char buf[1];
+    if (read(STDIN_FILENO, buf, 1) <= 0) return;
+    int ch = buf[0];
+#endif
+
+    bool changed = false;
+
+    if (ch == 'q' || ch == 'Q') {
+        // Q: 切换到上一个模式
+        int m = static_cast<int>(session_.GetGameMode());
+        m = (m + 2) % 3;  // 0→2→1→0
+        session_.SetGameMode(static_cast<GameMode>(m));
+        RefreshModeMaps();
+        changed = true;
+        const char* modeNames[] = { "Traditional", "Attack/Defend", "Free for All" };
+        printf("[SERVER] Mode: %s (%d maps)\n",
+               modeNames[m], static_cast<int>(modeMapIndices_.size()));
+    } else if (ch == 'e' || ch == 'E') {
+        // E: 切换到下一个模式
+        int m = static_cast<int>(session_.GetGameMode());
+        m = (m + 1) % 3;
+        session_.SetGameMode(static_cast<GameMode>(m));
+        RefreshModeMaps();
+        changed = true;
+        const char* modeNames[] = { "Traditional", "Attack/Defend", "Free for All" };
+        printf("[SERVER] Mode: %s (%d maps)\n",
+               modeNames[m], static_cast<int>(modeMapIndices_.size()));
+    } else if (ch == 'a' || ch == 'A') {
+        // A: 上一张地图
+        if (!modeMapIndices_.empty()) {
+            modeMapIdx_ = (modeMapIdx_ + static_cast<int>(modeMapIndices_.size()) - 1) %
+                          static_cast<int>(modeMapIndices_.size());
+            mapIndex_ = modeMapIndices_[modeMapIdx_];
+            changed = true;
+            printf("[SERVER] Map: %s\n",
+                   mapManager_.GetMapInfo(mapIndex_).name.c_str());
+        }
+    } else if (ch == 'd' || ch == 'D') {
+        // D: 下一张地图
+        if (!modeMapIndices_.empty()) {
+            modeMapIdx_ = (modeMapIdx_ + 1) % static_cast<int>(modeMapIndices_.size());
+            mapIndex_ = modeMapIndices_[modeMapIdx_];
+            changed = true;
+            printf("[SERVER] Map: %s\n",
+                   mapManager_.GetMapInfo(mapIndex_).name.c_str());
+        }
+    }
+
+    if (changed) {
+        // 模式切换时重新分配所有队伍
+        GameMode mode = session_.GetGameMode();
+        if (mode == GameMode::FREE_FOR_ALL) {
+            // FFA: 每人一队
+            for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
+                session_.GetSlot(i).team = i;
+            }
+        } else {
+            // 传统/攻防: 按次序分队
+            nextSlot_ = 0;
+            for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
+                if (session_.GetSlot(i).isHuman) {
+                    AssignTeamForSlot(i);
+                }
+            }
+        }
+        BroadcastLobbyState();
+    }
+}
+
+void GameServer::RefreshModeMaps() {
+    GameMode mode = session_.GetGameMode();
+    modeMapIndices_ = mapManager_.GetMapsForMode(mode);
+    modeMapIdx_ = 0;
+
+    if (modeMapIndices_.empty()) {
+        // 没有该模式的地图, 添加默认
+        printf("[SERVER] Warning: no maps for current mode, using all maps\n");
+        for (int i = 0; i < mapManager_.GetCount(); i++) {
+            modeMapIndices_.push_back(i);
+        }
+    }
+
+    // 同步全局地图索引
+    mapIndex_ = modeMapIndices_.empty() ? 0 : modeMapIndices_[modeMapIdx_];
+}
+
+void GameServer::AssignTeamForSlot(int slot) {
+    GameMode mode = session_.GetGameMode();
+    if (mode == GameMode::FREE_FOR_ALL) {
+        // FFA: 每人独立队伍
+        session_.GetSlot(slot).team = slot;
+    } else {
+        // 传统/攻防: 前两个一队, 后两个一队
+        session_.GetSlot(slot).team = (slot < 2) ? 0 : 1;
+    }
+}
+
 void GameServer::BroadcastLobbyState() {
     NetMessage state(NetMessageType::LobbyState);
 
     state.WritePayload(static_cast<uint16_t>(mapIndex_));
+    state.WritePayload(static_cast<uint8_t>(static_cast<int>(session_.GetGameMode())));
 
     for (int i = 0; i < 4; i++) {
         const auto& slot = session_.GetSlot(i);
@@ -303,12 +422,14 @@ void GameServer::BroadcastLobbyState() {
 }
 
 void GameServer::StartGame() {
-    // Set map path
-    if (mapIndex_ >= 0 && mapIndex_ < mapManager_.GetCount()) {
-        session_.SetMapPath(mapManager_.GetMapInfo(mapIndex_).filePath);
-    } else {
-        session_.SetMapPath("assets/maps/traditional/classic.txt");
+    // Set map path from filtered mode maps
+    int mapIdx = mapIndex_;
+    if (mapIdx < 0 || mapIdx >= mapManager_.GetCount()) {
+        mapIdx = modeMapIndices_.empty() ? 0 : modeMapIndices_[0];
     }
+    session_.SetMapPath(mapManager_.GetMapInfo(mapIdx).filePath);
+    printf("[SERVER] Starting game with map: %s (mode: %d)\n",
+           session_.GetMapPath().c_str(), static_cast<int>(session_.GetGameMode()));
 
     // Randomize AI types
     session_.RandomizeAITypes();
@@ -325,7 +446,6 @@ void GameServer::StartGame() {
     net_.BroadcastTCP(start);
 
     // Load map
-    printf("[SERVER] Starting game with map: %s\n", session_.GetMapPath().c_str());
     map_.LoadFromFile(session_.GetMapPath());
 
     // Subscribe to events
@@ -383,16 +503,27 @@ void GameServer::GameUpdate(float dt) {
         if (!wasDead) {
             tank->Update(dt);
             // Just died → handle lives
-            if (tank->IsDead() && tank->GetEntity()) {
+            if (tank->IsDead()) {
                 auto& slot = session_.GetSlot(static_cast<int>(i));
-                if (slot.lives > 0) {
-                    slot.lives--;
-                }
-                // Attack/Defend: mark defender respawn
-                if (session_.GetGameMode() == GameMode::ATTACK_DEFEND
-                    && slot.team == 1 && slot.lives < 0) {
-                    slot.isRespawning = true;
-                    slot.respawnTimer = RESPAWN_DELAY;
+                if (session_.GetGameMode() == GameMode::ATTACK_DEFEND) {
+                    int team = slot.team;
+                    if (team == 0) {
+                        // 攻方: 从共享命池扣命, 即时重生
+                        int& pool = session_.SharedLives(0);
+                        if (pool > 0) {
+                            pool--;
+                            slot.isRespawning = true;
+                            slot.respawnTimer = RESPAWN_DELAY_ATK;
+                        }
+                    } else {
+                        // 守方: 无限命, 延迟重生
+                        slot.isRespawning = true;
+                        slot.respawnTimer = RESPAWN_DELAY_DEF;
+                    }
+                } else {
+                    if (slot.lives > 0) {
+                        slot.lives--;
+                    }
                 }
             }
         }
@@ -603,21 +734,21 @@ void GameServer::CheckGameOver() {
             return;
         }
 
-        bool allAttackersDead = true;
-        for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
-            auto& slot = session_.GetSlot(i);
-            if (slot.team == 0) {
-                if (slot.lives > 0 || !tanks_[i]->IsDead()) {
+        // 守方胜利: 攻方共享命用完且所有攻方玩家死亡
+        if (session_.GetSharedLives(0) <= 0) {
+            bool allAttackersDead = true;
+            for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
+                if (session_.GetSlot(i).team == 0 && !tanks_[i]->IsDead()) {
                     allAttackersDead = false;
                     break;
                 }
             }
-        }
-        if (allAttackersDead) {
-            gameOver_ = true;
-            winningTeam_ = 1;
-            printf("[SERVER] Game over! Defenders win\n");
-            return;
+            if (allAttackersDead) {
+                gameOver_ = true;
+                winningTeam_ = 1;
+                printf("[SERVER] Game over! Defenders win\n");
+                return;
+            }
         }
     } else if (mode == GameMode::FREE_FOR_ALL) {
         int aliveCount = 0;

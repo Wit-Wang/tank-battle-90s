@@ -19,7 +19,7 @@ void HUD::Render() {
 void HUD::RenderTraditional() {
     int panelW = 180;
     int panelH = 160;
-    int panelX = GetScreenWidth() - panelW - 8;
+    int panelX = (GetScreenWidth() - panelW) / 2;
     int panelY = 8;
 
     DrawRectangle(panelX, panelY, panelW, panelH, ColorAlpha(BLACK, 0.7f));
@@ -62,9 +62,9 @@ void HUD::RenderTraditional() {
 }
 
 void HUD::RenderAttackDefend() {
-    int panelW = 200;
-    int panelH = 180;
-    int panelX = GetScreenWidth() - panelW - 8;
+    int panelW = 220;
+    int panelH = 200;
+    int panelX = (GetScreenWidth() - panelW) / 2;
     int panelY = 8;
 
     DrawRectangle(panelX, panelY, panelW, panelH, ColorAlpha(BLACK, 0.7f));
@@ -76,8 +76,10 @@ void HUD::RenderAttackDefend() {
 
     char buf[64];
 
-    // 攻方状态
-    DrawText("ATTACK:", textX, y, 14, RED);
+    // 攻方状态 (共享命)
+    int atkLives = session_.GetSharedLives(0);
+    snprintf(buf, sizeof(buf), "ATTACK (Lives: %d):", atkLives);
+    DrawText(buf, textX, y, 14, RED);
     y += lineH;
     for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
         const auto& slot = session_.GetSlot(i);
@@ -87,8 +89,8 @@ void HUD::RenderAttackDefend() {
         const char* status;
         if (slot.tank && !slot.tank->IsDead()) {
             status = "ALIVE";
-        } else if (slot.lives > 0) {
-            snprintf(buf, sizeof(buf), "DEAD (%d left)", slot.lives);
+        } else if (slot.isRespawning) {
+            snprintf(buf, sizeof(buf), "RESPAWN %.1fs", slot.respawnTimer);
             status = buf;
         } else {
             status = "OUT";
@@ -102,8 +104,8 @@ void HUD::RenderAttackDefend() {
     DrawLine(panelX + 5, y, panelX + panelW - 5, y, DARKGRAY);
     y += 4;
 
-    // 守方状态
-    DrawText("DEFEND:", textX, y, 14, BLUE);
+    // 守方状态 (无限命)
+    DrawText("DEFEND (Lives: INF):", textX, y, 14, BLUE);
     y += lineH;
     for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
         const auto& slot = session_.GetSlot(i);
@@ -128,7 +130,7 @@ void HUD::RenderAttackDefend() {
 void HUD::RenderFreeForAll() {
     int panelW = 180;
     int panelH = 140;
-    int panelX = GetScreenWidth() - panelW - 8;
+    int panelX = (GetScreenWidth() - panelW) / 2;
     int panelY = 8;
 
     DrawRectangle(panelX, panelY, panelW, panelH, ColorAlpha(BLACK, 0.7f));

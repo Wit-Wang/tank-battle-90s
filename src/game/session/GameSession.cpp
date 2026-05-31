@@ -40,15 +40,20 @@ void GameSession::SetGameMode(GameMode mode) {
             break;
     }
 
-    // 设置命 (攻防战特殊)
+    // 设置命 (攻防战使用共享命池)
     for (int i = 0; i < SLOT_COUNT; i++) {
-        if (mode == GameMode::ATTACK_DEFEND) {
-            slots_[i].lives = (slots_[i].team == 0) ? ATTACKER_LIVES : DEFENDER_LIVES;
-        } else if (mode == GameMode::FREE_FOR_ALL) {
+        if (mode == GameMode::FREE_FOR_ALL) {
             slots_[i].lives = 1;  // 一次命
         } else {
             slots_[i].lives = DEFAULT_LIVES;
         }
+    }
+    if (mode == GameMode::ATTACK_DEFEND) {
+        sharedLives_[0] = AD_ATTACKER_LIVES;  // 攻方共享命 (有限)
+        sharedLives_[1] = -1;                   // 守方无限命
+    } else {
+        sharedLives_[0] = 0;
+        sharedLives_[1] = 0;
     }
 }
 

@@ -9,11 +9,17 @@ class MapManager {
 public:
     MapManager() = default;
 
-    /// 扫描目录下的地图文件 (所有子目录)
+    /// 扫描目录下的地图文件 (所有子目录), 读取元数据
     void ScanMaps(const std::string& directory);
 
     /// 扫描指定模式的地图子目录
     void ScanMapsForMode(const std::string& baseDir, GameMode mode);
+
+    /// 获取支持指定模式的地图索引列表
+    std::vector<int> GetMapsForMode(GameMode mode) const;
+
+    /// 设置当前索引
+    void SetCurrentIndex(int idx) { if (idx >= 0 && idx < GetCount()) currentIndex_ = idx; }
 
     /// 切换地图
     void Next();

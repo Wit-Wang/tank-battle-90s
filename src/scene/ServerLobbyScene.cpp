@@ -89,6 +89,12 @@ void ServerLobbyScene::Update(float dt) {
             if (IsKeyPressed(KEY_UP))   currentSlot_ = (currentSlot_ + 3) % 4;
             if (IsKeyPressed(KEY_DOWN)) currentSlot_ = (currentSlot_ + 1) % 4;
 
+            // ENTER: toggle ready
+            if (IsKeyPressed(KEY_ENTER)) {
+                NetMessage ready(NetMessageType::ClientReady);
+                net_->Send(ready);
+            }
+
             // ESC: disconnect and return
             if (IsKeyPressed(KEY_ESCAPE)) {
                 manager_->PostReturnToMenu();
@@ -116,12 +122,15 @@ void ServerLobbyScene::HandleServerMessage(const NetMessage& msg) {
             std::size_t offset = 0;
             mapIndex_ = msg.ReadPayload<uint16_t>(offset);
             offset += 2;
+            gameMode_ = msg.ReadPayload<uint8_t>(offset); offset++;
             for (int i = 0; i < 4; i++) {
                 auto& slot = session_.GetSlot(i);
                 slot.isHuman  = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;
                 slot.tankType = static_cast<TankType>(msg.ReadPayload<uint8_t>(offset)); offset++;
                 slot.team     = msg.ReadPayload<uint8_t>(offset);       offset++;
+                slotReady_[i] = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;
             }
+            session_.SetGameMode(static_cast<GameMode>(gameMode_));
             break;
         }
         case NetMessageType::GameStart: {
@@ -205,8 +214,15 @@ void ServerLobbyScene::RenderLobby() {
     std::string addr = "Server: " + std::string(DEFAULT_SERVER_ADDRESS);
     DrawText(addr.c_str(), (sw - MeasureText(addr.c_str(), 16)) / 2, 55, 16, YELLOW);
 
+    // Game mode display
+    const char* modeNames[] = { "TRADITIONAL", "ATTACK/DEFEND", "FREE FOR ALL" };
+    int m = gameMode_;
+    if (m < 0 || m > 2) m = 0;
+    std::string modeStr = std::string("Mode: ") + modeNames[m];
+    DrawText(modeStr.c_str(), (sw - MeasureText(modeStr.c_str(), 18)) / 2, 80, 18, SKYBLUE);
+
     DrawText(statusMessage_.c_str(),
-             (sw - MeasureText(statusMessage_.c_str(), 16)) / 2, 80, 16, WHITE);
+             (sw - MeasureText(statusMessage_.c_str(), 16)) / 2, 105, 16, WHITE);
 
     // Slots
     for (int i = 0; i < 4; i++) {
@@ -214,7 +230,7 @@ void ServerLobbyScene::RenderLobby() {
     }
 
     // Controls
-    const char* hint = "UP/DOWN=Browse  LEFT/RIGHT=Your Tank  ESC=Disconnect";
+    const char* hint = "UP/DOWN=Browse  LEFT/RIGHT=Your Tank  ENTER=Ready  ESC=Disconnect";
     DrawText(hint, (sw - MeasureText(hint, 16)) / 2, 700, 16, YELLOW);
 }
 
@@ -262,10 +278,13 @@ void ServerLobbyScene::RenderSlot(int index, int y, bool selected) {
     if (slot.team == 3) teamStr = "PURPLE";
     DrawText(teamStr, boxX + 420, y + 12, 20, teamColor);
 
-    // YOU marker
+    // YOU marker / Ready
     if (index == mySlot_) {
         DrawText("YOU", boxX + 480, y + 12, 16, YELLOW);
     } else if (!slot.isHuman) {
         DrawText("AI", boxX + 480, y + 12, 14, GRAY);
+    }
+    if (slotReady_[index] && slot.isHuman) {
+        DrawText("RDY", boxX + 480, y + 40, 14, GREEN);
     }
 }

@@ -122,28 +122,47 @@ void GameScene::Update(float dt) {
         auto& tank = tanks_[i];
         bool wasDead = tank->IsDead();
         if (!wasDead) {
+            // 在 Update 前保存实体引用 (onDeath 回调会清空 entity_)
+            Entity* entityBefore = tank->GetEntity();
+            TransformComponent* tBefore = entityBefore
+                ? entityBefore->GetComponent<TransformComponent>() : nullptr;
+
             tank->Update(dt);
+
             // 刚死亡 → 爆炸特效 + 处理命
-            if (tank->IsDead() && tank->GetEntity()) {
-                auto* t = tank->GetEntity()->GetComponent<TransformComponent>();
-                if (t) {
+            if (tank->IsDead()) {
+                if (tBefore) {
                     Color c = tank->GetTeam() == 0 ? RED : BLUE;
                     if (mode_ == GameMode::FREE_FOR_ALL) {
                         static Color ffaColors[] = { RED, BLUE, GREEN, PURPLE };
                         c = (i < 4) ? ffaColors[i] : WHITE;
                     }
-                    particles_.EmitExplosion(t->GetPosition(), c);
+                    particles_.EmitExplosion(tBefore->GetPosition(), c);
                 }
 
-                // 扣命
                 auto& slot = session_.GetSlot(static_cast<int>(i));
-                if (slot.lives > 0) {
-                    slot.lives--;
-                }
-                // 标记攻防战守方重生
-                if (mode_ == GameMode::ATTACK_DEFEND && slot.team == 1 && slot.lives < 0) {
-                    slot.isRespawning = true;
-                    slot.respawnTimer = RESPAWN_DELAY;
+
+                if (mode_ == GameMode::ATTACK_DEFEND) {
+                    // 攻防战: 攻方共享有限命 (即时重生), 守方无限命 (延迟重生)
+                    int team = slot.team;
+                    if (team == 0) {
+                        // 攻方: 从共享命池扣命
+                        int& pool = session_.SharedLives(0);
+                        if (pool > 0) {
+                            pool--;
+                            slot.isRespawning = true;
+                            slot.respawnTimer = RESPAWN_DELAY_ATK;
+                        }
+                    } else {
+                        // 守方: 无限命, 延迟重生
+                        slot.isRespawning = true;
+                        slot.respawnTimer = RESPAWN_DELAY_DEF;
+                    }
+                } else {
+                    // 传统/FFA: 扣个人命
+                    if (slot.lives > 0) {
+                        slot.lives--;
+                    }
                 }
             }
         }
@@ -205,24 +224,22 @@ void GameScene::Render() {
         if (!tank->IsDead()) {
             tank->Render();
         } else if (mode_ == GameMode::ATTACK_DEFEND) {
-            // 攻防战: 正在重生的守方显示半透明
+            // 攻防战: 正在重生的玩家显示闪烁指示器
             auto& slot = session_.GetSlot(static_cast<int>(i));
-            if (slot.isRespawning && slot.team == 1) {
+            if (slot.isRespawning) {
                 float alpha = 0.3f + 0.2f * std::sin(gameTimer_ * 8.f);
-                // 简单方案: 在重生点画一个闪烁的矩形
-                auto* t = tank->GetEntity();
-                if (t) {
-                    auto* transform = t->GetComponent<TransformComponent>();
-                    if (transform) {
-                        Vector2 pos = transform->GetPosition();
-                        DrawRectangle(
-                            static_cast<int>(pos.x - TILE_SIZE * 0.4f),
-                            static_cast<int>(pos.y - TILE_SIZE * 0.4f),
-                            static_cast<int>(TILE_SIZE * 0.8f),
-                            static_cast<int>(TILE_SIZE * 0.8f),
-                            ColorAlpha(BLUE, alpha));
-                    }
-                }
+                Color indicatorColor = (slot.team == 0) ? RED : BLUE;
+                // 在出生点画闪烁矩形
+                const auto& spawns = map_.GetTeamSpawnPoints(slot.team);
+                Vector2 pos = spawns.empty()
+                    ? Vector2{ TILE_SIZE * 3.f, TILE_SIZE * 3.f }
+                    : spawns[0];
+                DrawRectangle(
+                    static_cast<int>(pos.x - TILE_SIZE * 0.4f),
+                    static_cast<int>(pos.y - TILE_SIZE * 0.4f),
+                    static_cast<int>(TILE_SIZE * 0.8f),
+                    static_cast<int>(TILE_SIZE * 0.8f),
+                    ColorAlpha(indicatorColor, alpha));
             }
         }
     }
@@ -397,21 +414,20 @@ void GameScene::CheckGameOver() {
             return;
         }
 
-        // 守方胜利: 所有攻方玩家命用完且死亡
-        bool allAttackersDead = true;
-        for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
-            auto& slot = session_.GetSlot(i);
-            if (slot.team == 0) {  // 攻方
-                if (slot.lives > 0 || !tanks_[i]->IsDead()) {
+        // 守方胜利: 攻方共享命用完且所有攻方玩家死亡
+        if (session_.GetSharedLives(0) <= 0) {
+            bool allAttackersDead = true;
+            for (int i = 0; i < GameSession::SLOT_COUNT; i++) {
+                if (session_.GetSlot(i).team == 0 && !tanks_[i]->IsDead()) {
                     allAttackersDead = false;
                     break;
                 }
             }
-        }
-        if (allAttackersDead) {
-            gameOver_ = true;
-            winningTeam_ = 1;  // 守方赢
-            return;
+            if (allAttackersDead) {
+                gameOver_ = true;
+                winningTeam_ = 1;  // 守方赢
+                return;
+            }
         }
     } else if (mode_ == GameMode::FREE_FOR_ALL) {
         // 各自为战: 最后存活者获胜

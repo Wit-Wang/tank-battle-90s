@@ -21,10 +21,10 @@ constexpr int MAP_ROWS = 13;
 // ---- Gameplay ----
 constexpr int   DEFAULT_LIVES = 3;
 constexpr int   MAX_PLAYERS   = 4;
-constexpr int   ATTACKER_LIVES = 3;       // 攻防战: 攻方命�
-constexpr int   DEFENDER_LIVES = -1;      // 攻防战: 守方无限 (-1)
-constexpr float RESPAWN_DELAY  = 3.0f;    // 攻防战: 守方重生延迟 (秒)
-constexpr float RESPAWN_INVINCIBLE = 2.0f; // 重生后无敌时间
+constexpr int   AD_ATTACKER_LIVES = 3;       // 攻防战: 攻方共享命 (有限)
+constexpr float RESPAWN_DELAY_ATK  = 0.0f;  // 攻防战: 攻方重生延迟 (秒, 即时)
+constexpr float RESPAWN_DELAY_DEF  = 3.0f;  // 攻防战: 守方重生延迟 (秒)
+constexpr float RESPAWN_INVINCIBLE = 2.0f;  // 重生后无敌时间
 
 // ---- Direction ----
 enum class Direction { UP, DOWN, LEFT, RIGHT };

@@ -15,7 +15,8 @@ struct MapInfo {
     std::string name;
     std::string filePath;
     int difficulty = 1;  // 1-5
-    GameMode mode = GameMode::TRADITIONAL;  // 适用的游戏模式
+    GameMode mode = GameMode::TRADITIONAL;  // 主要游戏模式
+    std::vector<GameMode> supportedModes;   // 支持的所有模式 (空=仅主模式)
 };
 
 /// 地图数据 + 渲染：管理 13×13 瓦片网格
@@ -23,8 +24,11 @@ class GameMap {
 public:
     GameMap() = default;
 
-    /// 从 JSON 文件加载
+    /// 从文件加载 (支持 #modes: 元数据头)
     bool LoadFromFile(const std::string& path);
+
+    /// 获取地图支持的模式列表 (从元数据解析)
+    const std::vector<GameMode>& GetSupportedModes() const { return supportedModes_; }
 
     /// 渲染地图瓦片
     void Render();
@@ -66,4 +70,5 @@ private:
     Vector2 basePosition_{ 0, 0 };
     Vector2 teamBasePositions_[2]{};
     std::vector<Vector2> teamSpawnPoints_[2];
+    std::vector<GameMode> supportedModes_;
 };

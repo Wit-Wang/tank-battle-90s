@@ -51,4 +51,5 @@ private:
     Timer fireCooldown_{ 0.f };
     Timer invincibleTimer_{ 0.f };
     bool  invincible_ = false;
+    bool  dead_ = false;  // 标记死亡，避免悬挂指针访问
 };

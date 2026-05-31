@@ -1,7 +1,65 @@
 #include "MapManager.h"
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 
 namespace fs = std::filesystem;
+
+/// 从地图文件读取 #modes: 元数据头, 推断支持的模式
+static void ReadMapMetadata(MapInfo& info) {
+    std::ifstream file(info.filePath);
+    if (!file.is_open()) return;
+
+    std::string line;
+    int baseCount = 0;
+    bool foundHeader = false;
+
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+
+        // 解析元数据头
+        if (line[0] == '#') {
+            const std::string tag = "#modes:";
+            if (line.rfind(tag, 0) == 0) {
+                std::string modes = line.substr(tag.size());
+                std::istringstream ms(modes);
+                std::string modeName;
+                while (std::getline(ms, modeName, ',')) {
+                    while (!modeName.empty() && modeName.front() == ' ') modeName.erase(0, 1);
+                    while (!modeName.empty() && modeName.back() == ' ') modeName.pop_back();
+                    if (modeName == "traditional")      info.supportedModes.push_back(GameMode::TRADITIONAL);
+                    else if (modeName == "attack_defend") info.supportedModes.push_back(GameMode::ATTACK_DEFEND);
+                    else if (modeName == "ffa")         info.supportedModes.push_back(GameMode::FREE_FOR_ALL);
+                }
+                foundHeader = true;
+            }
+            continue;
+        }
+
+        // 统计基地瓦片数量 (用于无元数据时推断)
+        std::istringstream iss(line);
+        int val;
+        while (iss >> val) {
+            if (val == 5) baseCount++;  // TileType::BASE = 5
+        }
+    }
+
+    // 无元数据头时根据基地数量推断
+    if (!foundHeader) {
+        if (baseCount >= 2) {
+            info.supportedModes = { GameMode::TRADITIONAL, GameMode::ATTACK_DEFEND, GameMode::FREE_FOR_ALL };
+        } else if (baseCount == 1) {
+            info.supportedModes = { GameMode::ATTACK_DEFEND, GameMode::FREE_FOR_ALL };
+        } else {
+            info.supportedModes = { GameMode::FREE_FOR_ALL };
+        }
+    }
+
+    // 设置主模式为第一个支持的模式
+    if (!info.supportedModes.empty()) {
+        info.mode = info.supportedModes[0];
+    }
+}
 
 void MapManager::ScanDirectory(const std::string& directory, GameMode mode) {
     if (!fs::exists(directory)) return;
@@ -13,8 +71,9 @@ void MapManager::ScanDirectory(const std::string& directory, GameMode mode) {
                 MapInfo info;
                 info.name = entry.path().stem().string();
                 info.filePath = entry.path().string();
-                info.difficulty = 1;  // 默认难度
+                info.difficulty = 1;
                 info.mode = mode;
+                ReadMapMetadata(info);
                 maps_.push_back(info);
             }
         }
@@ -110,4 +169,17 @@ GameMap MapManager::LoadCurrentMap() const {
         map.LoadFromFile(maps_[currentIndex_].filePath);
     }
     return map;
+}
+
+std::vector<int> MapManager::GetMapsForMode(GameMode mode) const {
+    std::vector<int> result;
+    for (int i = 0; i < static_cast<int>(maps_.size()); i++) {
+        for (auto m : maps_[i].supportedModes) {
+            if (m == mode) {
+                result.push_back(i);
+                break;
+            }
+        }
+    }
+    return result;
 }

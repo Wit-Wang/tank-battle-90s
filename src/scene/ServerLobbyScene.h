@@ -41,4 +41,6 @@ private:
     // Lobby state
     int currentSlot_ = 0;
     int mapIndex_ = 0;
+    int gameMode_ = 0;  // GameMode enum from server
+    bool slotReady_[4] = {};
 };
