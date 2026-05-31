@@ -35,8 +35,8 @@ private:
     AIState state_ = AIState::PATROL;
     Direction patrolDir_ = Direction::UP;
     Timer dirChangeTimer_{ 2.0f };
-    Timer fireTimer_{ 0.8f };
-    float detectRange_ = 300.f;
+    Timer fireTimer_{ 1.2f };
+    float detectRange_ = 250.f;
 
     static const std::vector<Tank*>* allTanks_;
     static Entity* bases_[2];

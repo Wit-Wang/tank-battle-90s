@@ -3,6 +3,7 @@
 #include "net/NetController.h"
 
 #include "GameServer.h"
+#include "game/entities/Bullet.h"
 #include "game/tank/TankFactory.h"
 #include "game/tank/controller/AIController.h"
 #include "game/entities/Bullet.h"
@@ -585,7 +586,7 @@ void GameServer::SpawnBases() {
             Base* base = bases_[1];
             col->onCollision = [base](Entity* other) {
                 auto* bullet = dynamic_cast<Bullet*>(other);
-                if (bullet) {
+                if (bullet && bullet->GetOwnerTeam() != base->GetTeam()) {
                     base->Destroy();
                     bullet->SetActive(false);
                 }
@@ -605,7 +606,7 @@ void GameServer::SpawnBases() {
             Base* base = bases_[t];
             col->onCollision = [base](Entity* other) {
                 auto* bullet = dynamic_cast<Bullet*>(other);
-                if (bullet) {
+                if (bullet && bullet->GetOwnerTeam() != base->GetTeam()) {
                     base->Destroy();
                     bullet->SetActive(false);
                 }

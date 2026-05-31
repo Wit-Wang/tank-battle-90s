@@ -312,7 +312,7 @@ void GameScene::SpawnBases() {
             Base* base = bases_[1];
             col->onCollision = [base](Entity* other) {
                 auto* bullet = dynamic_cast<Bullet*>(other);
-                if (bullet) {
+                if (bullet && bullet->GetOwnerTeam() != base->GetTeam()) {
                     base->Destroy();
                     bullet->SetActive(false);
                 }
@@ -332,7 +332,7 @@ void GameScene::SpawnBases() {
             Base* base = bases_[t];
             col->onCollision = [base](Entity* other) {
                 auto* bullet = dynamic_cast<Bullet*>(other);
-                if (bullet) {
+                if (bullet && bullet->GetOwnerTeam() != base->GetTeam()) {
                     base->Destroy();
                     bullet->SetActive(false);
                 }

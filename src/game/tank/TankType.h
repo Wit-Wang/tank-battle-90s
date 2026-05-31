@@ -30,10 +30,10 @@ struct TankStats {
 ///   护甲: LIGHT=0, MEDIUM=1, HEAVY=2, SPEED=0
 ///   有效伤害 = max(1, bulletDamage - armor)
 inline const std::unordered_map<TankType, TankStats> TANK_STATS = {
-    { TankType::LIGHT,  { 100.f, 350.f, 1, 1, 0, 0.5f, 2, "LIGHT",  "assets/textures/tank_light.png"  }},
+    { TankType::LIGHT,  { 85.f,  350.f, 1, 1, 0, 0.7f, 2, "LIGHT",  "assets/textures/tank_light.png"  }},
     { TankType::MEDIUM, { 80.f,  300.f, 2, 2, 1, 0.7f, 1, "MEDIUM", "assets/textures/tank_medium.png" }},
     { TankType::HEAVY,  { 55.f,  250.f, 2, 3, 2, 1.0f, 1, "HEAVY",  "assets/textures/tank_heavy.png"  }},
-    { TankType::SPEED,  { 130.f, 400.f, 1, 1, 0, 0.3f, 3, "SPEED",  "assets/textures/tank_speed.png"  }},
+    { TankType::SPEED,  { 110.f, 400.f, 1, 1, 0, 0.4f, 3, "SPEED",  "assets/textures/tank_speed.png"  }},
 };
 
 inline const TankStats& GetTankStats(TankType type) {
