@@ -147,8 +147,10 @@ void GameServer::AcceptNewConnections() {
 
     // Find an available slot (server has no host reservation — slot 0 is available)
     int slot = -1;
+    auto& clients = net_.GetClients();
+    clients.back().slotIndex = -1;  // clear pre-assigned value from AcceptClient()
     bool used[4] = {};
-    for (auto& c : net_.GetClients()) {
+    for (auto& c : clients) {
         if (c.slotIndex >= 0 && c.slotIndex < 4)
             used[c.slotIndex] = true;
     }
@@ -166,7 +168,6 @@ void GameServer::AcceptNewConnections() {
     }
 
     // Assign slot and team by join order
-    auto& clients = net_.GetClients();
     clients.back().slotIndex = slot;
     clients.back().lastPing = lobbyTimer_;
     clients.back().ready = false;
@@ -316,6 +317,11 @@ void GameServer::HandleServerInput() {
         int m = static_cast<int>(session_.GetGameMode());
         m = (m + 2) % 3;  // 0→2→1→0
         session_.SetGameMode(static_cast<GameMode>(m));
+        // 保留已连接玩家的 human 状态
+        for (auto& c : net_.GetClients()) {
+            if (c.slotIndex >= 0 && c.slotIndex < 4)
+                session_.GetSlot(c.slotIndex).isHuman = true;
+        }
         RefreshModeMaps();
         changed = true;
         const char* modeNames[] = { "Traditional", "Attack/Defend", "Free for All" };
@@ -326,6 +332,11 @@ void GameServer::HandleServerInput() {
         int m = static_cast<int>(session_.GetGameMode());
         m = (m + 1) % 3;
         session_.SetGameMode(static_cast<GameMode>(m));
+        // 保留已连接玩家的 human 状态
+        for (auto& c : net_.GetClients()) {
+            if (c.slotIndex >= 0 && c.slotIndex < 4)
+                session_.GetSlot(c.slotIndex).isHuman = true;
+        }
         RefreshModeMaps();
         changed = true;
         const char* modeNames[] = { "Traditional", "Attack/Defend", "Free for All" };

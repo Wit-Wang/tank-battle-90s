@@ -145,6 +145,8 @@ void ServerLobbyScene::HandleServerMessage(const NetMessage& msg) {
             mapIndex_ = msg.ReadPayload<uint16_t>(offset);
             offset += 2;
             gameMode_ = msg.ReadPayload<uint8_t>(offset); offset++;
+            // SetGameMode FIRST (resets slots to defaults), then overwrite with server data
+            session_.SetGameMode(static_cast<GameMode>(gameMode_));
             for (int i = 0; i < 4; i++) {
                 auto& slot = session_.GetSlot(i);
                 slot.isHuman  = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;
@@ -152,7 +154,6 @@ void ServerLobbyScene::HandleServerMessage(const NetMessage& msg) {
                 slot.team     = msg.ReadPayload<uint8_t>(offset);       offset++;
                 slotReady_[i] = msg.ReadPayload<uint8_t>(offset) != 0;  offset++;
             }
-            session_.SetGameMode(static_cast<GameMode>(gameMode_));
             break;
         }
         case NetMessageType::GameStart: {
